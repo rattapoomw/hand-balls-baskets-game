@@ -18,7 +18,14 @@
   }
   html,body{height:100%;margin:0;overflow:hidden;background:#070b18;}
   body{font-family:"Noto Sans Thai","Sarabun",system-ui,sans-serif;-webkit-tap-highlight-color:transparent;}
-  #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);z-index:0;background:#070b18;}
+  /* The video is positioned and sized by applyVideoLayout() from videoRect().
+     object-fit is deliberately NOT used for layout: it picks the fill axis
+     itself, and any disagreement with videoRect() shows up as a hand skeleton
+     that is the wrong size — aligned at the centre, drifting at the edges.
+     One source of truth instead. object-fit:fill just stretches the frame to
+     the box we give it, and that box always carries the camera's own aspect. */
+  #video{position:fixed;left:0;top:0;width:100%;height:100%;object-fit:fill;
+         transform:scaleX(-1);transform-origin:50% 50%;z-index:0;background:#070b18;}
   #canvas{position:fixed;inset:0;width:100%;height:100%;z-index:10;touch-action:none;cursor:none;}
   .layer{position:fixed;inset:0;z-index:20;pointer-events:none;}
   .glass{background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
@@ -522,6 +529,10 @@ function videoRect(){
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return { x:0, y:0, w:G.W, h:G.H };
   const va = vw/vh, ca = G.W/G.H;
+  /* 'fill' = always fill the HEIGHT and crop the sides. That keeps the full
+     vertical view — where hands enter and leave — on a 4:3 camera in a wide
+     window, instead of cropping top and bottom the way CSS cover would. It is
+     a distinct mode from 'cover', not a synonym for it. */
   if (G.fit === 'fill'){ const dh=G.H, dw=G.H*va; return { x:(G.W-dw)/2, y:0, w:dw, h:dh }; }
   const fillHeight = (G.fit==='cover') ? (va > ca) : (va < ca);
   const dh = fillHeight ? G.H : G.W/va;
@@ -542,12 +553,22 @@ function mapPoint(nx, ny){
   const r = videoRect();
   return { x: r.x + (1-nx)*r.w, y: r.y + ny*r.h };
 }
+/* The single place the video element's geometry is set. Everything that maps
+   between camera space and screen space goes through videoRect(), so the
+   painted frame and the drawn overlay cannot disagree. */
+function applyVideoLayout(){
+  const r = videoRect();
+  video.style.left   = r.x + 'px';
+  video.style.top    = r.y + 'px';
+  video.style.width  = r.w + 'px';
+  video.style.height = r.h + 'px';
+}
+
 const FITS = ['fill','contain','cover'];
 const FIT_LABEL = { fill:'พอดีความสูง', contain:'เต็มภาพ', cover:'เต็มจอ' };
 function setFit(mode){
   if (FITS.indexOf(mode) < 0) mode = 'fill';
   G.fit = mode;
-  video.style.objectFit = (mode==='contain') ? 'contain' : 'cover';
   store.set('basket.fit', mode);
   const b = document.getElementById('btnFit');
   if (b) b.textContent = 'มุมมอง: ' + FIT_LABEL[mode];
@@ -559,10 +580,16 @@ function resize(){
   canvas.width = G.W*dpr; canvas.height = G.H*dpr;
   canvas.style.width = G.W+'px'; canvas.style.height = G.H+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  applyVideoLayout();
   G.s = Math.max(0.55, Math.min(G.W/1100, G.H/760));
   if (G.screen==='play') layoutBaskets();
 }
 window.addEventListener('resize', resize);
+/* videoWidth is 0 until the first frame is decoded, so the initial resize()
+   lays out against a placeholder aspect. Re-run it the moment the real
+   dimensions land, and again if the camera is swapped mid-session. */
+video.addEventListener('loadedmetadata', resize);
+video.addEventListener('resize', resize);
 
 /* =========================================================================
    5. BODY MODEL — face-derived midline, scale, head yaw, trunk excursion
