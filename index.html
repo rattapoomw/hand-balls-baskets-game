@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>เก็บลูกบอลลงตะกร้า — Ball &amp; Basket AR</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --glass: rgba(255,255,255,.12);
+    --glass-strong: rgba(255,255,255,.20);
+    --line: rgba(255,255,255,.35);
+  }
+  html,body{height:100%;margin:0;overflow:hidden;background:#070b18;}
+  body{font-family:"Noto Sans Thai","Sarabun",system-ui,sans-serif;-webkit-tap-highlight-color:transparent;}
+  #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);z-index:0;background:#070b18;}
+  #canvas{position:fixed;inset:0;width:100%;height:100%;z-index:10;touch-action:none;cursor:none;}
+  .layer{position:fixed;inset:0;z-index:20;pointer-events:none;}
+  .glass{background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    border:1px solid var(--line);box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.35);}
+  .btn-glow{box-shadow:0 12px 32px rgba(16,185,129,.45), inset 0 1px 0 rgba(255,255,255,.5);}
+  .fade-in{animation:fade .45s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){.fade-in{animation:none}}
+  .hidden{display:none!important}
+  select, textarea, input{ color-scheme: dark; color:#fff; }
+  select option{ background:#0f172a; color:#f1f5f9; }
+  .zonechip{ border:1px solid rgba(255,255,255,.28); }
+  .zonechip.on{ background:rgba(16,185,129,.28); border-color:rgba(52,211,153,.8); }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible{
+    outline:2px solid #6ee7b7; outline-offset:2px;
+  }
+</style>
+</head>
+<body class="text-white">
+
+<video id="video" playsinline autoplay muted></video>
+<canvas id="canvas"></canvas>
+
+<!-- ===== Top control bar (mouse clickable) ===== -->
+<div class="layer">
+  <div id="topBar" class="hidden absolute top-3 right-3 flex gap-2" style="pointer-events:auto">
+    <button id="btnFit" class="glass rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/20 transition">มุมมอง: พอดีความสูง</button>
+    <button id="btnSkipWave" class="glass rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/20 transition">ข้ามรอบนี้</button>
+  </div>
+</div>
+
+<!-- ===== Start screen ===== -->
+<div id="startScreen" class="layer flex items-center justify-center px-5 overflow-y-auto" style="pointer-events:auto">
+  <div class="glass rounded-3xl max-w-lg w-full p-8 text-center fade-in my-6">
+    <div class="text-6xl mb-3">🧺 ✋</div>
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">เก็บลูกบอลลงตะกร้า</h1>
+    <p class="mt-2 text-white/75 leading-relaxed">
+      เกม AR ฝึกการเอื้อมและหยิบจับ · จับคู่สีและรูปทรง<br>
+      <span class="text-white/55 text-sm">Reach, grasp, carry, release. Colour + shape matching — no reading required.</span>
+    </p>
+    <ul class="mt-5 text-left text-sm text-white/80 space-y-1.5">
+      <li>🤏 <b>จีบนิ้ว</b> หรือ ✊ <b>กำมือ</b> = หยิบลูกบอล</li>
+      <li>🖐️ <b>แบมือ</b> เหนือตะกร้า = ปล่อยลง</li>
+      <li>🎨 ลูกบอลลงตะกร้าที่มี <b>สีและรูปทรงเดียวกัน</b></li>
+      <li>🖱️ ไม่มีกล้อง? ใช้เมาส์ลากได้ทันที</li>
+    </ul>
+    <button id="btnStart" class="mt-7 w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-[.99] transition px-6 py-4 text-lg font-bold btn-glow">
+      เริ่ม · Start
+    </button>
+    <p class="mt-3 text-xs text-white/55">
+      ระบบจะขออนุญาตใช้กล้อง — ภาพทั้งหมดประมวลผลในเครื่องนี้ ไม่มีการส่งภาพออก<br>
+      บันทึกเฉพาะตัวเลขที่คำนวณได้ (ตำแหน่งกึ่งกลางลำตัว ระยะเอื้อม การเอียงตัว)
+    </p>
+  </div>
+</div>
+
+<!-- ===== Camera problem banner ===== -->
+<div class="layer">
+  <div id="camBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 w-[92%] max-w-xl" style="pointer-events:auto">
+    <div class="glass rounded-2xl px-4 py-3" style="border-color:rgba(252,165,165,.55)">
+      <div class="flex items-start gap-3">
+        <span class="text-xl leading-none">📷</span>
+        <div class="flex-1 min-w-0">
+          <div id="camTitle" class="font-bold text-sm text-rose-200"></div>
+          <div id="camFix" class="text-xs text-white/70 mt-0.5 leading-relaxed"></div>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-3">
+        <button id="camRetry" class="flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 transition px-3 py-2 text-sm font-bold">ลองใหม่</button>
+        <button id="camMouse" class="rounded-xl glass hover:bg-white/20 transition px-3 py-2 text-sm font-semibold">เล่นด้วยเมาส์</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Skip bar for canvas-drawn steps (pinch check / calibration) ===== -->
+<div class="layer">
+  <div id="stepBar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2" style="pointer-events:auto">
+    <button id="btnSkipStep" class="glass rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-white/20 transition">
+      ข้ามขั้นตอนนี้
+    </button>
+  </div>
+</div>
+
+<!-- ===== Player / prescription form ===== -->
+<div id="formScreen" class="layer hidden flex items-center justify-center px-5 overflow-y-auto" style="pointer-events:auto">
+  <div class="glass rounded-3xl max-w-xl w-full p-7 my-6 fade-in">
+    <h2 class="text-2xl font-bold text-center">ข้อมูลผู้เล่น และการสั่งฝึก</h2>
+    <p class="mt-1 text-center text-white/60 text-sm">ชื่อจะใช้เป็นรหัสอ้างอิงของผู้เล่นในการบันทึกผล</p>
+
+    <label class="block mt-5 text-sm font-semibold" for="fName">ชื่อผู้เล่น <span class="text-rose-300">*</span></label>
+    <input id="fName" list="knownNames" maxlength="40" autocomplete="off"
+      class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-4 py-3 placeholder-white/40 focus:outline-none focus:border-emerald-300"
+      placeholder="เช่น P001 หรือ ชื่อเล่น" />
+    <datalist id="knownNames"></datalist>
+    <p id="fErr" class="hidden mt-1 text-sm text-rose-300">กรุณากรอกชื่อผู้เล่นก่อน</p>
+    <p id="fSeen" class="hidden mt-1 text-sm text-emerald-300"></p>
+
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div>
+        <label class="block text-sm font-semibold" for="fSide">แขนที่ฝึก <span class="text-rose-300">*</span></label>
+        <select id="fSide" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
+          <option value="right">ขวา</option>
+          <option value="left">ซ้าย</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold" for="fPose">ท่าทาง</label>
+        <select id="fPose" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
+          <option value="">-</option><option value="sit" selected>นั่ง</option>
+          <option value="stand">ยืน</option><option value="wheelchair">รถเข็น</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="mt-5 text-sm font-semibold">ตำแหน่งตะกร้า — เลือก 3–5 โซน</p>
+    <p class="text-xs text-white/55 mt-0.5">ตำแหน่งตะกร้าเป็นตัวกำหนดการเคลื่อนไหวที่ผู้ป่วยต้องทำ เลือกให้ตรงกับเป้าหมายการรักษา</p>
+    <div id="zoneWrap" class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+    <p id="zErr" class="hidden mt-1 text-sm text-rose-300">เลือกอย่างน้อย 3 โซน (ไม่เกิน 5)</p>
+
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div>
+        <label class="block text-sm font-semibold" for="fGrip">ขนาดลูกบอล (ชนิดการจับ)</label>
+        <select id="fGrip" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
+          <option value="mixed" selected>คละขนาด</option>
+          <option value="small">เล็ก — จับแบบหยิก (precision)</option>
+          <option value="large">ใหญ่ — จับแบบกำ (power)</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold" for="fWaves">จำนวนรอบ</label>
+        <select id="fWaves" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
+          <option value="3">3 รอบ (ทดลอง)</option>
+          <option value="6">6 รอบ</option>
+          <option value="8" selected>8 รอบ (แนะนำ)</option>
+          <option value="12">12 รอบ</option>
+        </select>
+      </div>
+    </div>
+
+    <label class="block mt-4 text-sm font-semibold" for="fNote">รายละเอียด (ไม่บังคับ)</label>
+    <textarea id="fNote" rows="2" maxlength="200"
+      class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-4 py-3 placeholder-white/40 focus:outline-none focus:border-emerald-300"
+      placeholder="เช่น สัปดาห์ที่ 3 · หลังกายภาพบำบัด"></textarea>
+
+    <button id="btnForm" class="mt-6 w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-[.99] transition px-6 py-4 text-lg font-bold btn-glow">
+      ถัดไป · Continue
+    </button>
+    <button id="btnBackStart" class="mt-2 w-full rounded-xl px-6 py-2 text-sm text-white/60 hover:text-white transition">ย้อนกลับ</button>
+  </div>
+</div>
+
+<!-- ===== Finish screen ===== -->
+<div id="endScreen" class="layer hidden flex items-center justify-center px-5 overflow-y-auto" style="pointer-events:auto">
+  <div class="glass rounded-3xl max-w-md w-full p-8 text-center fade-in my-6">
+    <div class="text-7xl mb-2">🎉</div>
+    <h2 class="text-4xl font-bold">เสร็จแล้ว!</h2>
+    <p class="mt-2 text-white/75">เก็บได้ <span id="finalBalls">0</span> ลูก · <span id="finalWaves">0</span> รอบ</p>
+    <div id="finalNeglect" class="mt-4 text-sm text-white/70"></div>
+    <button id="btnNextPlayer" class="mt-7 w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 transition px-6 py-4 text-lg font-bold btn-glow">
+      ผู้เล่นคนถัดไป · Next player
+    </button>
+    <button id="btnAgain" class="mt-3 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">
+      เล่นอีกครั้ง (คนเดิม)
+    </button>
+    <button id="btnCsv" class="mt-3 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">
+      ⬇️ ดาวน์โหลดสถิติ (CSV)
+    </button>
+  </div>
+</div>
+
+<script type="module">
+/* =========================================================================
+   BALL & BASKET — AR colour/shape sorting for upper-limb rehabilitation
+   Companion to the Thai sentence AR game. Same engine, same log pipeline.
+
+   Layers:
+     ENGINE  camera · MediaPipe (hands + face) · gesture · pointer · stats
+     BODY    face-derived midline / scale / trunk, reach envelope (R)
+     GAME    zones · baskets · waves · balls · Fitts
+   ========================================================================= */
+
+import { FilesetResolver, HandLandmarker, FaceDetector }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+/* =========================================================================
+   0. TUNABLE CONSTANTS  — everything an OT or a dev might want to change
+   ========================================================================= */
+const CFG = {
+  /* --- logging --- */
+  STATS_URL : '',                 // ← paste the Apps Script /exec URL here
+  GAME_ID   : 'ball_basket',
+  APP_VER   : '1.0-basket-draft',
+
+  /* --- session shape --- */
+  WAVES_DEFAULT   : 8,     // overridden by the form
+  PAIRS_PER_WAVE  : 3,     // 3 mirrored pairs = 6 balls, symmetric about midline
+  COLLECT_PER_WAVE: 4,     // wave ends after this many — the rest are OMISSIONS
+  WAVE_IDLE_MS    : 14000, // ...or after this long with no successful drop
+  WAVE_MAX_MS     : 75000, // hard ceiling per wave
+
+  /* --- Fitts: basket width levels, cycled across waves (balanced vs fatigue) --- */
+  BASKET_W_LEVELS : [1.0, 0.70, 0.50],
+  BASKET_R_BASE   : 0.085,   // × min(reach w,h) at W level 1.0
+
+  /* --- where balls spawn: near field, kept clear of the basket band --- */
+  SPAWN_R   : [0.18, 0.52],   // × R, from the shoulder origin
+  SPAWN_ANG : [15, 80],       // degrees above the ipsilateral horizontal
+  BAND_TOP    : 78,           // px × s reserved for the HUD panel
+  BAND_BOTTOM : 78,           // px × s reserved for the จบเกม button + status
+
+  /* --- grip prescription: ball radius as a fraction of min(reach w,h) --- */
+  BALL_R : { small:0.032, large:0.062 },
+  /* the hit test is deliberately more forgiving than the drawn ball: below
+     ~4% of the screen, fingertip jitter dominates and you measure the tracker,
+     not the patient. Drawn size still drives the aperture they scale to —
+     verify with ap_min that a small ball really did produce a small grip. */
+  GRAB_PAD_MIN_FRAC : 0.045,
+  GRAB_PAD_MULT     : 1.45,
+
+  /* --- reach envelope calibration --- */
+  CALIB_MS      : 9000,
+  CALIB_BINS    : 12,        // 12 × 15° over the 180° frontal half-plane
+  CALIB_PCTL    : 0.80,      // R = 80th percentile of per-bin maxima
+  R_FALLBACK    : 0.42,      // × reachRect height, if calibration is skipped
+
+  /* --- body model (face-derived) --- */
+  FACE_HZ            : 4,    // head moves slowly; don't spend frames on it
+  ASSUMED_IPD_CM     : 6.3,  // ±4mm individual variance → ~6% scale error
+  SHOULDER_DROP_IPD  : 3.2,  // eye line → suprasternal notch, in IPD units
+  YAW_GATE           : 0.55, // |yaw proxy| above this → don't trust midline
+  FACE_STALE_MS      : 1500,
+
+  /* --- gesture --- */
+  GRIP_CLOSE : 0.62,
+  GRIP_OPEN  : 0.95,
+
+  /* --- zone geometry: angle from the ipsilateral horizontal, radius × R --- */
+  ZONES : [
+    { id:'ipsi_mid',      th:'ข้างเดียวกัน (กลาง)', en:'Ipsilateral mid',
+      ang: 12, rad:0.60, note:'ท่าพื้นฐาน ใช้เป็นค่าอ้างอิง', on:true },
+    { id:'cross_midline', th:'ข้ามแนวกลางลำตัว',    en:'Cross midline',
+      ang:158, rad:0.68, note:'ฝึกข้ามแนวกลางลำตัว', on:true },
+    { id:'elevate',       th:'ยกสูง',                en:'Elevate',
+      ang: 68, rad:0.72, note:'ยก/กางหัวไหล่', on:true },
+    { id:'extend',        th:'เอื้อมไกล',            en:'Reach far',
+      ang:  8, rad:0.95, note:'เหยียดข้อศอก', on:false },
+    { id:'near_low',      th:'ใกล้และต่ำ (ควบคุม)',  en:'Near & low (control)',
+      ang:-40, rad:0.38, note:'ท่าชดเชย — ใช้เปรียบเทียบเท่านั้น', on:false }
+  ],
+
+  /* --- colours: never hue alone. Shape is redundant coding on ball AND basket.
+         High contrast, well separated — not pastels (cataracts, low contrast
+         sensitivity in the older stroke population). --- */
+  COLORS : [
+    { id:'red',    hex:'#ef4444', dark:'#7f1d1d', shape:'circle',   th:'แดง' },
+    { id:'blue',   hex:'#3b82f6', dark:'#1e3a8a', shape:'square',   th:'น้ำเงิน' },
+    { id:'yellow', hex:'#facc15', dark:'#713f12', shape:'triangle', th:'เหลือง' },
+    { id:'green',  hex:'#22c55e', dark:'#14532d', shape:'star',     th:'เขียว' },
+    { id:'white',  hex:'#f1f5f9', dark:'#334155', shape:'diamond',  th:'ขาว' }
+  ],
+
+  /* --- MediaPipe model assets --- */
+  WASM : 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
+  HAND_MODEL : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+  FACE_MODEL : 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite'
+};
+
+/* =========================================================================
+   1. SMALL UTILITIES
+   ========================================================================= */
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const mean  = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+const sd    = a => { if(a.length<2) return 0; const m=mean(a);
+                     return Math.sqrt(mean(a.map(v=>(v-m)*(v-m)))); };
+const med   = a => { if(!a.length) return null; const s=[...a].sort((x,y)=>x-y), m=s.length>>1;
+                     return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
+const uid   = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const playerKey = n => (n||'').trim().replace(/\s+/g,' ').toLowerCase();
+const RAD = d => d*Math.PI/180;
+
+/* localStorage can throw (private mode, sandboxed iframe) → fall back to RAM */
+const store = (()=>{
+  const mem = {};
+  try{ const k='__probe'; localStorage.setItem(k,'1'); localStorage.removeItem(k);
+       return { get:k=>localStorage.getItem(k), set:(k,v)=>{ try{localStorage.setItem(k,v);}catch(e){ mem[k]=v; } } }; }
+  catch(e){ return { get:k=> (k in mem ? mem[k] : null), set:(k,v)=>{ mem[k]=v; } }; }
+})();
+const readRows = k => { try{ return JSON.parse(store.get(k) || '[]'); }catch(e){ return []; } };
+
+function shuffle(a){ const r=[...a];
+  for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; }
+  return r; }
+
+/* =========================================================================
+   2. ELEMENTS + STATE
+   ========================================================================= */
+const video  = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const topBar = document.getElementById('topBar');
+
+const G = {
+  screen:'start',        // start | form | pinch | calib | tutorial | play | end
+  fit:'fill',
+  W:0, H:0, s:1, fps:60,
+  aiState:'idle', camMsg:null,
+  baskets:[], balls:[], held:null, hover:null, grabOff:{x:0,y:0},
+  wave:0, wavesTotal:CFG.WAVES_DEFAULT, waveT0:0, waveLastDrop:0,
+  phase:'gap', gapUntil:0,        // 'live' = balls in play, 'gap' = between waves
+  wSeq:[], collected:0, collectedTotal:0,
+  omit:{ left:0, right:0 }, firstTouchSide:[],
+  banner:null, particles:[], endHold:0, hoverSince:0, lockedUntil:0,
+  gripMode:'mixed', side:'right'
+};
+
+const P = { x:0,y:0, rx:0,ry:0, down:false, prevDown:false, pressed:false, released:false,
+            active:false, mode:'none', lastMode:'none', needRelease:false };
+const HAND = { landmarks:null, lastSeen:0, acquiredAt:0, grabbing:false,
+               pinchRatio:1.4, pinchEMA:1.4, curled:0, palm:0.8 };
+const MOUSE = { x:0, y:0, down:false, lastMove:-9999 };
+
+/* rolling aperture trace (~3 s). The hand opens BEFORE the grab is detected,
+   so the opening phase can only be recovered by looking backwards. */
+const AP = {
+  buf:[], cap:200,
+  push(t,v,palm){ this.buf.push({t,v,palm}); if(this.buf.length>this.cap) this.buf.shift(); },
+  window(from){ return this.buf.filter(s=>s.t>=from); }
+};
+
+/* =========================================================================
+   3. CAMERA + MEDIAPIPE (tasks-vision: one WASM fileset, two models)
+   ========================================================================= */
+let handLM = null, faceDet = null, stream = null, running = false;
+let lastHandTs = 0, lastFaceTs = 0, lastFaceRun = 0;
+
+function cameraProblem(err){
+  const n = (err && err.name) || '';
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia))
+    return { code:'insecure', th:'หน้านี้ไม่ได้เปิดผ่าน https',
+             fix:'เบราว์เซอร์อนุญาตให้ใช้กล้องเฉพาะ https หรือ localhost เท่านั้น' };
+  if (n==='NotAllowedError'||n==='SecurityError')
+    return { code:'denied', th:'เบราว์เซอร์ยังไม่อนุญาตให้ใช้กล้อง',
+             fix:'กดไอคอนกล้องบนแถบที่อยู่เว็บ แล้วเลือก "อนุญาต" จากนั้นกดลองใหม่' };
+  if (n==='NotReadableError'||n==='TrackStartError'||n==='AbortError')
+    return { code:'busy', th:'เปิดกล้องไม่ได้ — กล้องอาจถูกโปรแกรมอื่นใช้อยู่',
+             fix:'ปิด Zoom / Teams / Meet หรือแท็บอื่นที่ใช้กล้อง เปิดฝาปิดเลนส์ แล้วกดลองใหม่' };
+  if (n==='NotFoundError'||n==='DevicesNotFoundError')
+    return { code:'none', th:'ไม่พบกล้องในเครื่องนี้',
+             fix:'เสียบกล้องแล้วกดลองใหม่ หรือเล่นด้วยเมาส์ก็ได้' };
+  if (n==='OverconstrainedError'||n==='ConstraintNotSatisfiedError')
+    return { code:'constraint', th:'กล้องไม่รองรับความละเอียดที่ขอ',
+             fix:'ระบบจะลองความละเอียดต่ำลงให้อัตโนมัติ' };
+  if (n==='ScriptError')
+    return { code:'script', th:'โหลดโมเดล MediaPipe ไม่สำเร็จ',
+             fix:'ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต แล้วรีเฟรชหน้าเว็บ' };
+  return { code:'unknown', th:'เปิดกล้องไม่ได้', fix:'ลองรีเฟรชหน้าเว็บ หรือเล่นด้วยเมาส์แทน' };
+}
+
+/* Release every track. Without this a retry asks the driver for a device the
+   page itself is still holding, which produces NotReadableError again. */
+function releaseCamera(){
+  running = false;
+  if (stream){ stream.getTracks().forEach(t=>{ try{ t.stop(); }catch(e){} }); stream = null; }
+  if (video.srcObject) video.srcObject = null;
+}
+
+const CAM_TRIES = [
+  { video:{ width:{ideal:1280}, height:{ideal:720}, facingMode:'user' } },
+  { video:{ width:{ideal:640},  height:{ideal:480}, facingMode:'user' } },
+  { video:true }
+];
+async function openStream(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    const e = new Error('getUserMedia unavailable'); e.name = 'NotSupportedError'; throw e;
+  }
+  let last;
+  for (const c of CAM_TRIES){
+    try{ return await navigator.mediaDevices.getUserMedia(c); }
+    catch(err){
+      last = err;
+      if (err && (err.name==='NotAllowedError' || err.name==='SecurityError')) throw err;
+      await new Promise(r=>setTimeout(r, 350));
+    }
+  }
+  throw last;
+}
+
+async function initVision(){
+  releaseCamera();
+  stream = await openStream();
+  video.srcObject = stream;
+  await video.play().catch(()=>{});
+  await new Promise(res=>{
+    if (video.videoWidth) return res();
+    video.addEventListener('loadedmetadata', res, { once:true });
+    setTimeout(res, 4000);
+  });
+
+  if (!handLM){
+    let fs;
+    try{ fs = await FilesetResolver.forVisionTasks(CFG.WASM); }
+    catch(e){ const err=new Error('wasm'); err.name='ScriptError'; throw err; }
+    /* GPU delegate is a big win but fails on some classroom drivers and
+       inside remote-desktop sessions. Retry on CPU rather than losing the
+       whole session; the frame rate is logged either way. */
+    const mk = async (delegate)=>{
+      handLM = await HandLandmarker.createFromOptions(fs, {
+        baseOptions:{ modelAssetPath:CFG.HAND_MODEL, delegate },
+        runningMode:'VIDEO', numHands:1,
+        minHandDetectionConfidence:0.6, minTrackingConfidence:0.6
+      });
+      faceDet = await FaceDetector.createFromOptions(fs, {
+        baseOptions:{ modelAssetPath:CFG.FACE_MODEL, delegate },
+        runningMode:'VIDEO', minDetectionConfidence:0.5
+      });
+    };
+    try{ await mk('GPU'); }
+    catch(e){
+      handLM = null; faceDet = null;
+      try{ await mk('CPU'); }
+      catch(e2){ const err=new Error('model'); err.name='ScriptError'; throw err; }
+    }
+  }
+
+  stream.getVideoTracks().forEach(t=>{
+    t.onended = ()=>{ if (G.aiState==='ready'){ G.aiState='lost';
+      G.camMsg = { th:'กล้องหยุดทำงาน', fix:'อาจถูกโปรแกรมอื่นแย่งใช้ กดลองใหม่ได้' }; } };
+  });
+
+  running = true;
+  G.aiState = 'ready'; G.camMsg = null;
+  resize();
+}
+
+/* Inference is pulled from the draw loop, not pushed by a callback: one
+   timeline, no chance of the two disagreeing about "now". */
+function pumpVision(now){
+  if (!running || !handLM || video.readyState < 2) return;
+
+  const ts = Math.max(lastHandTs + 1, Math.round(now));
+  lastHandTs = ts;
+  let res = null;
+  try{ res = handLM.detectForVideo(video, ts); }catch(e){ return; }
+
+  if (res && res.landmarks && res.landmarks.length){
+    if (!HAND.landmarks || now - HAND.lastSeen > 400){
+      HAND.acquiredAt = now; HAND.pinchEMA = 1.4; HAND.grabbing = false;
+    }
+    HAND.landmarks = res.landmarks[0];
+    HAND.lastSeen  = now;
+    updateGesture(HAND.landmarks, now);
+  } else {
+    HAND.landmarks = null; HAND.grabbing = false;
+  }
+
+  if (faceDet && now - lastFaceRun > 1000/CFG.FACE_HZ){
+    lastFaceRun = now;
+    const fts = Math.max(lastFaceTs + 1, Math.round(now));
+    lastFaceTs = fts;
+    try{ BODY.ingest(faceDet.detectForVideo(video, fts), now); }catch(e){}
+  }
+}
+
+/* ---- gesture: forgiving pinch + fist, with hysteresis ---- */
+const d2 = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
+
+/* Aperture is a 2D measure. Turn the hand edge-on and the thumb–index gap
+   foreshortens, reading falsely small. The MCP-knuckle span collapses in the
+   same situation, so it doubles as a validity flag (~0.8 palm-on, ~0.25 edge-on). */
+const palmFacing = lm => d2(lm[5], lm[17]) / Math.max(1e-4, d2(lm[0], lm[9]));
+
+function updateGesture(lm, now){
+  const palm = Math.max(1e-4, d2(lm[0], lm[9]));
+  const raw  = d2(lm[4], lm[8]) / palm;
+  HAND.pinchEMA += (raw - HAND.pinchEMA) * 0.5;
+  HAND.pinchRatio = HAND.pinchEMA;
+
+  const tips=[8,12,16,20], pips=[6,10,14,18];
+  let curled=0, extended=0;
+  for (let i=0;i<4;i++){
+    if (d2(lm[tips[i]], lm[0]) < d2(lm[pips[i]], lm[0]) * 1.03) curled++; else extended++;
+  }
+  HAND.curled = curled;
+  HAND.palm   = palmFacing(lm);
+  AP.push(now, HAND.pinchRatio, HAND.palm);
+
+  if (now - HAND.acquiredAt < 250){ HAND.grabbing = false; return; }   // tracker not settled
+  const on = HAND.grabbing;
+  const isPinch  = HAND.pinchRatio < (on ? 0.90 : CFG.GRIP_CLOSE);
+  const isFist   = curled >= (on ? 2 : 3);
+  const isSpread = extended >= 4 && HAND.pinchRatio > CFG.GRIP_OPEN;
+  HAND.grabbing = isSpread ? false : (isPinch || isFist);
+}
+
+/* =========================================================================
+   4. VIEW GEOMETRY
+   ========================================================================= */
+function videoRect(){
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return { x:0, y:0, w:G.W, h:G.H };
+  const va = vw/vh, ca = G.W/G.H;
+  if (G.fit === 'fill'){ const dh=G.H, dw=G.H*va; return { x:(G.W-dw)/2, y:0, w:dw, h:dh }; }
+  const fillHeight = (G.fit==='cover') ? (va > ca) : (va < ca);
+  const dh = fillHeight ? G.H : G.W/va;
+  const dw = fillHeight ? G.H*va : G.W;
+  return { x:(G.W-dw)/2, y:(G.H-dh)/2, w:dw, h:dh };
+}
+/* Where a hand can be SEEN and DRAWN. Every hand-operable thing must sit
+   inside this: a button in a letterbox bar is unreachable by hand even
+   though a mouse can click it. */
+function reachRect(){
+  const v = videoRect();
+  const x0 = Math.max(0, v.x), y0 = Math.max(0, v.y);
+  const x1 = Math.min(G.W, v.x+v.w), y1 = Math.min(G.H, v.y+v.h);
+  return { x:x0, y:y0, w:Math.max(40, x1-x0), h:Math.max(40, y1-y0) };
+}
+/* normalised landmark → canvas px (mirrored, so patient-right = screen-right) */
+function mapPoint(nx, ny){
+  const r = videoRect();
+  return { x: r.x + (1-nx)*r.w, y: r.y + ny*r.h };
+}
+const FITS = ['fill','contain','cover'];
+const FIT_LABEL = { fill:'พอดีความสูง', contain:'เต็มภาพ', cover:'เต็มจอ' };
+function setFit(mode){
+  if (FITS.indexOf(mode) < 0) mode = 'fill';
+  G.fit = mode;
+  video.style.objectFit = (mode==='contain') ? 'contain' : 'cover';
+  store.set('basket.fit', mode);
+  const b = document.getElementById('btnFit');
+  if (b) b.textContent = 'มุมมอง: ' + FIT_LABEL[mode];
+  resize();
+}
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  G.W = window.innerWidth; G.H = window.innerHeight;
+  canvas.width = G.W*dpr; canvas.height = G.H*dpr;
+  canvas.style.width = G.W+'px'; canvas.style.height = G.H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  G.s = Math.max(0.55, Math.min(G.W/1100, G.H/760));
+  if (G.screen==='play') layoutBaskets();
+}
+window.addEventListener('resize', resize);
+
+/* =========================================================================
+   5. BODY MODEL — face-derived midline, scale, head yaw, trunk excursion
+   -------------------------------------------------------------------------
+   Two midlines on purpose:
+     live   → follows the patient as they shift in the chair. Used to place
+              baskets, because head turn is noise there.
+     frozen → captured at session start. Used for the neglect side split,
+              because in neglect the head habitually turns to the ipsilesional
+              side — define the midline from a moving head and you cancel out
+              the very asymmetry you are trying to detect.
+   ========================================================================= */
+const BODY = {
+  ok:false, lastSeen:0,
+  midX:null, eyeY:null, ipd:null, yaw:0,
+  frozenMidX:null, frozen:false, freezeBuf:[],
+  rest:null,                    // {x,y,ipd} baseline for trunk excursion
+  R:null, rSource:'none',
+  profile:[],                   // reach envelope per angle bin
+
+  ingest(res, now){
+    const d = res && res.detections && res.detections[0];
+    if (!d || !d.keypoints || d.keypoints.length < 6) return;
+
+    /* BlazeFace keypoint order: rightEye, leftEye, noseTip, mouth,
+       rightEarTragion, leftEarTragion — in IMAGE space, so "right" is the
+       image's right. We only use them symmetrically, so it does not matter. */
+    const k = d.keypoints.map(p=>mapPoint(p.x, p.y));
+    const eyeA=k[0], eyeB=k[1], nose=k[2], earA=k[4], earB=k[5];
+
+    const ipd = Math.hypot(eyeA.x-eyeB.x, eyeA.y-eyeB.y);
+    if (!(ipd > 4)) return;                       // implausible → ignore frame
+
+    const midX = (eyeA.x+eyeB.x)/2, eyeY = (eyeA.y+eyeB.y)/2;
+    /* yaw proxy from tragion asymmetry: 0 facing camera, ±1 turned hard */
+    const yaw = (Math.hypot(nose.x-earA.x, nose.y-earA.y) -
+                 Math.hypot(nose.x-earB.x, nose.y-earB.y)) / ipd;
+
+    this.ipd = ipd; this.eyeY = eyeY; this.yaw = yaw;
+    this.lastSeen = now; this.ok = true;
+    /* a hard head turn foreshortens the face: don't move the working midline */
+    if (Math.abs(yaw) < CFG.YAW_GATE) this.midX = midX;
+    else if (this.midX === null) this.midX = midX;
+
+    if (!this.frozen){
+      this.freezeBuf.push(midX);
+      if (this.freezeBuf.length > 40) this.freezeBuf.shift();
+    }
+    if (!this.rest) this.rest = { x:midX, y:eyeY, ipd };
+  },
+
+  /* call once, while the patient is looking at the tutorial and still */
+  freeze(){
+    if (this.freezeBuf.length >= 6){
+      this.frozenMidX = med(this.freezeBuf); this.frozen = true;
+    }
+    if (this.ok) this.rest = { x:this.midX, y:this.eyeY, ipd:this.ipd };
+  },
+
+  fresh(now){ return this.ok && (now - this.lastSeen) < CFG.FACE_STALE_MS; },
+  cmPerPx(){ return this.ipd ? CFG.ASSUMED_IPD_CM / this.ipd : null; },
+
+  /* movement origin ≈ suprasternal notch: below the eye line by a fixed
+     number of IPDs. Falls back to the centre of the reachable rect. */
+  origin(){
+    const rr = reachRect();
+    if (this.ok && this.ipd && this.midX !== null){
+      return { x: clamp(this.midX, rr.x, rr.x+rr.w),
+               y: clamp(this.eyeY + CFG.SHOULDER_DROP_IPD*this.ipd, rr.y, rr.y+rr.h),
+               src:'face' };
+    }
+    return { x: rr.x + rr.w/2, y: rr.y + rr.h*0.92, src:'fallback' };
+  },
+
+  /* the split used for neglect: frozen if we have it, live otherwise */
+  splitX(){ return this.frozen ? this.frozenMidX : this.origin().x; },
+
+  /* Trunk excursion. The classic compensation for poor elbow extension is
+     leaning forward — invisible to a hand tracker, obvious to a face one.
+     Lateral/vertical convert to cm; depth only as a scale ratio, because
+     absolute depth needs a focal length we do not have. */
+  trunk(){
+    if (!this.ok || !this.rest) return { dx:'', dy:'', scale:'' };
+    const c = this.cmPerPx();
+    return {
+      dx: c!=null ? +((this.midX - this.rest.x)*c).toFixed(1) : '',
+      dy: c!=null ? +((this.eyeY - this.rest.y)*c).toFixed(1) : '',
+      scale: +(this.ipd / this.rest.ipd).toFixed(3)
+    };
+  },
+
+  radius(){
+    if (this.R) return this.R;
+    return reachRect().h * CFG.R_FALLBACK;
+  }
+};
+
+/* =========================================================================
+   6. POINTER (hand ⇄ mouse arbitration)
+   ========================================================================= */
+function updatePointer(now, dt){
+  const handFresh  = HAND.landmarks && (now - HAND.lastSeen) < 400 && video.videoWidth > 0;
+  const mouseFresh = (now - MOUSE.lastMove) < 1200 || MOUSE.down;
+
+  if (mouseFresh)      P.mode='mouse';
+  else if (handFresh)  P.mode='hand';
+  else                 P.mode='none';
+
+  if (P.mode==='hand'){
+    const tip = mapPoint(HAND.landmarks[8].x, HAND.landmarks[8].y);
+    P.rx=tip.x; P.ry=tip.y; P.down=HAND.grabbing; P.active=true;
+  } else if (P.mode==='mouse'){
+    P.rx=MOUSE.x; P.ry=MOUSE.y; P.down=MOUSE.down; P.active=true;
+  } else { P.down=false; P.active=false; }
+
+  if (P.mode !== P.lastMode){          // teleport, don't slide across the screen
+    P.x = P.rx; P.y = P.ry;
+    P.prevDown = P.down;
+    if (P.down) P.needRelease = true;  // entered mid-pinch → open the hand once
+    P.lastMode = P.mode;
+  }
+  const rate = P.mode==='hand' ? 20 : 34;
+  const k = 1 - Math.exp(-rate * dt/1000);
+  P.x += (P.rx-P.x)*k; P.y += (P.ry-P.y)*k;
+
+  P.pressed  = P.down && !P.prevDown;
+  P.released = !P.down && P.prevDown;
+  P.prevDown = P.down;
+  if (!P.down) P.needRelease = false;
+}
+const wantsGrab = ()=> P.down && !P.needRelease;
+
+canvas.addEventListener('mousemove', e=>{
+  if (Math.hypot(e.clientX-MOUSE.x, e.clientY-MOUSE.y) > 2 || MOUSE.down) MOUSE.lastMove=performance.now();
+  MOUSE.x=e.clientX; MOUSE.y=e.clientY;
+});
+canvas.addEventListener('mousedown', e=>{ MOUSE.x=e.clientX; MOUSE.y=e.clientY; MOUSE.down=true; MOUSE.lastMove=performance.now(); });
+window.addEventListener('mouseup',   ()=>{ if (MOUSE.down) MOUSE.lastMove=performance.now(); MOUSE.down=false; });
+canvas.addEventListener('touchstart',e=>{ const t=e.touches[0]; MOUSE.x=t.clientX; MOUSE.y=t.clientY; MOUSE.down=true; MOUSE.lastMove=performance.now(); e.preventDefault(); },{passive:false});
+canvas.addEventListener('touchmove', e=>{ const t=e.touches[0]; MOUSE.x=t.clientX; MOUSE.y=t.clientY; MOUSE.lastMove=performance.now(); e.preventDefault(); },{passive:false});
+window.addEventListener('touchend',  ()=>{ MOUSE.down=false; MOUSE.lastMove=performance.now(); });
+
+/* =========================================================================
+   7. ZONES + BASKETS
+   -------------------------------------------------------------------------
+   Zones are prescribed by label and stored in body-relative polar
+   coordinates, so the same prescription reproduces across sessions even
+   though the patient sits differently and the screen size changes.
+   ========================================================================= */
+let PRESCRIBED = CFG.ZONES.filter(z=>z.on).map(z=>z.id);
+
+const sideSign = ()=> (G.side === 'left' ? -1 : 1);   // +1 = ipsilateral is screen-right
+
+function zonePoint(z, o, R){
+  const a = RAD(z.ang);
+  return { x: o.x + Math.cos(a)*z.rad*R*sideSign(),
+           y: o.y - Math.sin(a)*z.rad*R };
+}
+
+function layoutBaskets(){
+  const o = BODY.origin(), R = BODY.radius(), rr = reachRect();
+  const wLevel = G.wSeq.length ? G.wSeq[G.wave % G.wSeq.length] : 1.0;
+  const br = CFG.BASKET_R_BASE * Math.min(rr.w, rr.h) * wLevel;
+
+  G.baskets.forEach((b,i)=>{
+    const z = CFG.ZONES.find(z=>z.id===b.zone);
+    const p = zonePoint(z, o, R);
+    const m = br + 8*G.s;
+    const cx = clamp(p.x, rr.x+m, rr.x+rr.w-m);
+    const cy = clamp(p.y, rr.y+m+CFG.BAND_TOP*G.s, rr.y+rr.h-m-CFG.BAND_BOTTOM*G.s);
+    /* a clamped basket means the prescribed zone was not achievable on this
+       screen / at this reach — the OT needs to know, so it is logged */
+    b.clamped = (Math.abs(cx-p.x) > 2 || Math.abs(cy-p.y) > 2) ? 1 : 0;
+    b.x = cx; b.y = cy; b.r = br; b.wLevel = wLevel;
+  });
+}
+
+function buildBaskets(){
+  const zones = CFG.ZONES.filter(z=>PRESCRIBED.includes(z.id));
+  G.baskets = zones.map((z,i)=>({
+    zone:z.id, ci:i, x:0, y:0, r:20, wLevel:1, clamped:0, flash:0, fill:0
+  }));
+  layoutBaskets();
+}
+
+/* =========================================================================
+   8. WAVES + BALLS
+   -------------------------------------------------------------------------
+   Balls spawn in MIRRORED PAIRS about the (frozen) midline, matched for
+   radius, so any left/right difference in collection is about the patient
+   and not about the layout. The wave deliberately ends before every ball is
+   collected: with no possibility of omission there is no omission to measure.
+   ========================================================================= */
+function ballRadius(){
+  const rr = reachRect(), base = Math.min(rr.w, rr.h);
+  const mode = G.gripMode === 'mixed' ? (Math.random()<0.5 ? 'small':'large') : G.gripMode;
+  return { r: CFG.BALL_R[mode]*base, grip:mode };
+}
+
+function freeSpot(x, y, r, others, relax){
+  const rr = reachRect(), m = r + 6*G.s;
+  const top = rr.y + m + CFG.BAND_TOP*G.s, bot = rr.y + rr.h - m - CFG.BAND_BOTTOM*G.s;
+  if (x < rr.x+m || x > rr.x+rr.w-m || y < top || y > bot) return false;
+  for (const b of G.baskets) if (Math.hypot(x-b.x, y-b.y) < b.r + r + 16*G.s*relax) return false;
+  for (const o of others)    if (Math.hypot(x-o.x, y-o.y) < o.r + r + 14*G.s*relax) return false;
+  return true;
+}
+
+/* Balls spawn in the NEAR field; baskets sit out in the prescribed zones
+   (0.38–0.95 R). Keeping the two radial bands apart means every transport is
+   an outward reach into the zone the OT actually prescribed — if balls could
+   spawn beyond their basket, half the movements would be reaching back
+   towards the body and the zone label would stop describing the movement.
+   It costs some Fitts D range; the basket zones and the W levels supply it. */
+function spawnWave(){
+  const o = BODY.origin(), R = BODY.radius(), split = BODY.splitX();
+  const placed = [];
+  const pairs  = [];
+
+  for (let i=0;i<CFG.PAIRS_PER_WAVE;i++){
+    let got = null;
+    /* relaxation ladder: a tight layout on a small screen with 5 baskets can
+       make the ideal spacing impossible. Loosen rather than silently spawn a
+       short wave — a short wave has no omissions left over, which would quietly
+       disable the neglect measure. */
+    for (const relax of [1, 0.6, 0.3]){
+      for (let k=0;k<120 && !got;k++){
+        const ang = RAD(CFG.SPAWN_ANG[0] + Math.random()*(CFG.SPAWN_ANG[1]-CFG.SPAWN_ANG[0]));
+        const fr  = CFG.SPAWN_R[0] + Math.random()*(CFG.SPAWN_R[1]-CFG.SPAWN_R[0]);
+        const sz  = ballRadius();
+        const dx  = Math.cos(ang)*fr*R, dy = -Math.sin(ang)*fr*R;
+        if (dx < sz.r + 12*G.s) continue;            // keep the pair off each other
+        const a = { x: split + dx, y: o.y + dy, r:sz.r, grip:sz.grip, side:'right' };
+        const b = { x: split - dx, y: o.y + dy, r:sz.r, grip:sz.grip, side:'left'  };
+        if (freeSpot(a.x,a.y,a.r,placed,relax) && freeSpot(b.x,b.y,b.r,placed,relax)){
+          placed.push(a,b); got = [a,b];
+        }
+      }
+      if (got) break;
+    }
+    if (got) pairs.push(got);
+  }
+  G.spawnShort = CFG.PAIRS_PER_WAVE - pairs.length;   // logged, not swallowed
+
+  /* Assign a target basket per ball. Colours are matched within a pair so the
+     two sides are equally easy; D is measured after the fact rather than
+     prescribed, which is what the Fitts regression wants anyway. */
+  G.balls = [];
+  let id = 0;
+  pairs.forEach((pair, pi)=>{
+    /* Rotate targets across waves so every zone is trained, but skip any
+       basket the ball has effectively spawned inside — a transport with
+       D < W is not a reach and its Fitts ID is undefined. */
+    let bi = (pi + G.wave) % G.baskets.length;
+    for (let t=0;t<G.baskets.length;t++){
+      const cand = G.baskets[(bi+t) % G.baskets.length];
+      const dmin = Math.min(...pair.map(p=>Math.hypot(p.x-cand.x, p.y-cand.y)));
+      if (dmin > cand.r*1.4){ bi = (bi+t) % G.baskets.length; break; }
+    }
+    pair.forEach(p=>{
+      const basket = G.baskets[bi];
+      const D = Math.hypot(p.x-basket.x, p.y-basket.y);
+      G.balls.push({
+        id:id++, x:p.x, y:p.y, tx:p.x, ty:p.y, spawnX:p.x, spawnY:p.y,
+        r:p.r, grip:p.grip, side:p.side, ci:basket.ci, target:basket.zone,
+        D, W:basket.r*2, done:false, pop:1, wrong:0, lift:0
+      });
+    });
+  });
+
+  G.collected = 0;
+  G.waveT0 = performance.now();
+  G.waveLastDrop = G.waveT0;
+  G.held = null; G.hover = null;
+  RE.reset(performance.now());
+}
+
+/* The gap between waves is driven by the game loop, not setTimeout. A
+   backgrounded tab pauses rAF but keeps firing timers, which would otherwise
+   spawn the next wave against state the loop has not caught up with — and if
+   the timer were throttled away entirely the game would sit in a wave that
+   has already ended, re-triggering endWave on every frame with no live
+   STATS.wave to log into. `phase` makes that state explicit. */
+function endWave(reason){
+  if (G.phase !== 'live') return;                 // never end the same wave twice
+  G.phase = 'gap';
+  const left  = G.balls.filter(b=>!b.done && b.side==='left').length;
+  const right = G.balls.filter(b=>!b.done && b.side==='right').length;
+  G.omit.left += left; G.omit.right += right;
+  STATS.logWave(reason, left, right);
+
+  G.wave++;
+  if (G.wave >= G.wavesTotal){ finishSession('finished'); return; }
+  G.banner = { text:`รอบที่ ${G.wave+1}`, sub:'เตรียมตัว', t:performance.now() };
+  G.gapUntil = performance.now() + 1400;
+}
+function beginWave(){
+  G.phase = 'live';
+  layoutBaskets(); spawnWave(); STATS.startWave();
+}
+
+/* =========================================================================
+   9. STATS — flat single sheet, one `type` column, shared with the word game
+   ========================================================================= */
+const STATS = {
+  URL : CFG.STATS_URL,
+  QKEY:'basket.queue.v1', RKEY:'basket.rows.v1', NKEY:'rehab.names.v1',
+  session:null, wave:null
+};
+const STAT_COLS = [
+  'type','game','ts','sid','player_key','display_name','note','side','posture',
+  'wave','block','mv',
+  /* movement — transport phase (grasp → release) */
+  'ball_color','basket_color','basket_zone','correct','drop_type',
+  'grasp','grasp_ms','move_ms','path_pct','dist_pct','path_ratio','peak_vel',
+  'ttp_pct','submoves','drop_err_pct',
+  'ap_max','ap_min','ap_exc','close_ms','release_ms','hold_sd','palm_face',
+  /* movement — reach phase (previous release → grasp) */
+  'reach_ms','reach_path_pct','reach_d_pct','reach_submoves','fitts_id_reach',
+  /* Fitts */
+  'fitts_d_pct','fitts_w_pct','fitts_id','reach_d_cm','fitts_d_cm',
+  'ball_r_pct','ball_grip','spawn_side','basket_w_level','basket_clamped',
+  /* body */
+  'trunk_dx_cm','trunk_dy_cm','trunk_scale','head_yaw','cm_per_px','ipd_px',
+  'origin_src','reach_R_pct','midline_frozen',
+  /* wave / neglect */
+  'balls_spawned','balls_done','spawn_short','omit_left','omit_right','first_touch_side',
+  'wave_ms','end_reason',
+  /* pinch check */
+  'cycles','cycle_ms','grip_close_th','grip_open_th',
+  /* calibration */
+  'calib_bins','calib_profile',
+  /* session */
+  'waves_done','waves_total','balls_total','correct_total','wrong_total',
+  'duration_ms','no_hand_ms','ended_early','zones','grip_mode',
+  'input','fps_mean','fps_min','screen','ua','app'
+];
+
+const PLAYER = { key:'', name:'', note:'', side:'', posture:'' };
+const knownNames = ()=> readRows(STATS.NKEY);
+function rememberName(n){
+  const list = knownNames();
+  if (n && !list.some(x=>playerKey(x)===playerKey(n))){
+    list.push(n); store.set(STATS.NKEY, JSON.stringify(list.slice(-60)));
+  }
+}
+
+STATS.start = function(){
+  this.session = { sid:uid(), t0:performance.now(), fps:[], correct:0, wrong:0, noHand:0 };
+};
+STATS.base = function(){
+  const s = this.session || {sid:''};
+  const t = BODY.trunk();
+  return { ts:new Date().toISOString(), sid:s.sid, game:CFG.GAME_ID,
+    player_key:PLAYER.key, display_name:PLAYER.name, note:PLAYER.note,
+    side:PLAYER.side, posture:PLAYER.posture,
+    trunk_dx_cm:t.dx, trunk_dy_cm:t.dy, trunk_scale:t.scale,
+    head_yaw: BODY.ok ? +BODY.yaw.toFixed(3) : '',
+    cm_per_px: BODY.cmPerPx()!=null ? +BODY.cmPerPx().toFixed(4) : '',
+    ipd_px: BODY.ipd ? +BODY.ipd.toFixed(1) : '',
+    origin_src: BODY.origin().src, midline_frozen: BODY.frozen ? 1 : 0,
+    reach_R_pct: +(BODY.radius()/G.H*100).toFixed(2),
+    screen:`${G.W}x${G.H}`, ua:navigator.userAgent.slice(0,110), app:CFG.APP_VER };
+};
+STATS.push = function(row){
+  const full = Object.assign({}, this.base(), row);
+  const q = readRows(this.QKEY); q.push(full); store.set(this.QKEY, JSON.stringify(q));
+  const a = readRows(this.RKEY); a.push(full); store.set(this.RKEY, JSON.stringify(a));
+  this.flush();
+};
+STATS.startWave = function(){
+  this.wave = { t0:performance.now(), mv:0, hand:0, mouse:0, noHand:0,
+                fpsSum:0, fpsN:0, fpsMin:999, done:0, correct:0, wrong:0, firstSide:'' };
+};
+STATS.logWave = function(reason, omitL, omitR){
+  const w = this.wave; if (!w || !this.session) return;
+  this.push({
+    type:'round', wave:G.wave+1,
+    block: G.wSeq.length ? G.wSeq[G.wave % G.wSeq.length] : '',
+    balls_spawned:G.balls.length, balls_done:w.done, spawn_short:G.spawnShort||0,
+    correct_total:w.correct, wrong_total:w.wrong, omit_left:omitL, omit_right:omitR,
+    first_touch_side:w.firstSide, wave_ms:Math.round(performance.now()-w.t0),
+    end_reason:reason, input: w.hand>w.mouse ? 'hand':'mouse',
+    no_hand_ms:Math.round(w.noHand),
+    fps_mean: w.fpsN ? +(w.fpsSum/w.fpsN).toFixed(1) : '',
+    fps_min : w.fpsMin<999 ? +w.fpsMin.toFixed(1) : ''
+  });
+  this.wave = null;
+};
+STATS.logMovement = function(m){
+  const w = this.wave; if (!w || !this.session) return;
+  w.mv++;
+  this.push(Object.assign({ type:'movement', wave:G.wave+1, mv:w.mv,
+    block: G.wSeq.length ? G.wSeq[G.wave % G.wSeq.length] : '' }, m));
+};
+STATS.endSession = function(reason){
+  const s = this.session; if (!s) return;
+  const fps = s.fps;
+  this.push({
+    type:'session', waves_done:G.wave, waves_total:G.wavesTotal,
+    balls_total:G.collectedTotal, correct_total:s.correct, wrong_total:s.wrong,
+    omit_left:G.omit.left, omit_right:G.omit.right,
+    duration_ms:Math.round(performance.now()-s.t0),
+    ended_early: reason==='finished' ? 0 : 1, end_reason:reason||'',
+    zones:PRESCRIBED.join('|'), grip_mode:G.gripMode,
+    grip_close_th:CFG.GRIP_CLOSE, grip_open_th:CFG.GRIP_OPEN,
+    fps_mean: fps.length ? +(mean(fps)).toFixed(1) : '',
+    fps_min : fps.length ? +Math.min.apply(null,fps).toFixed(1) : ''
+  });
+  this.session = null;
+  this.flush();
+};
+/* fire-and-forget: a no-cors POST cannot be read back, so delivery is never
+   confirmable — the local archive keeps a copy either way */
+STATS.flush = function(){
+  if (!this.URL) return;
+  const q = readRows(this.QKEY); if (!q.length) return;
+  const body = JSON.stringify({ rows:q });
+  let sent = false;
+  try{ sent = navigator.sendBeacon &&
+       navigator.sendBeacon(this.URL, new Blob([body],{type:'text/plain;charset=UTF-8'})); }catch(e){}
+  if (!sent) fetch(this.URL,{ method:'POST', mode:'no-cors',
+      headers:{'Content-Type':'text/plain;charset=UTF-8'}, body }).catch(()=>{});
+  store.set(this.QKEY,'[]');
+};
+STATS.csv = function(){
+  const rows = readRows(this.RKEY);
+  const esc = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  return '\ufeff' + [STAT_COLS.join(',')]
+    .concat(rows.map(r=>STAT_COLS.map(c=>esc(r[c])).join(','))).join('\n');
+};
+STATS.download = function(){
+  const url = URL.createObjectURL(new Blob([this.csv()],{type:'text/csv;charset=utf-8'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = `ball_basket_log_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
+};
+addEventListener('pagehide', ()=>{ STATS.endSession('closed'); releaseCamera(); });
+addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden') STATS.flush(); });
+
+/* =========================================================================
+   10. REACH PHASE — previous release (or wave start) → grasp
+   -------------------------------------------------------------------------
+   This half was thrown away in the word game. It is a Fitts task in its own
+   right (target W = ball diameter) and it is the phase least contaminated by
+   cognition, because the patient has already chosen the ball.
+   ========================================================================= */
+const RE = { t0:0, x0:0, y0:0, px:0, py:0, path:0, v:[], live:false };
+RE.reset = function(now){
+  this.t0=now; this.x0=P.x; this.y0=P.y; this.px=P.x; this.py=P.y;
+  this.path=0; this.v=[]; this.live=true;
+};
+RE.sample = function(now, dt){
+  if (!this.live || dt<=0) return;
+  const d = Math.hypot(P.x-this.px, P.y-this.py);
+  this.path += d; this.v.push(d/dt*1000);
+  this.px=P.x; this.py=P.y;
+};
+RE.harvest = function(now, ball){
+  if (!this.live || this.v.length < 3) return {};
+  this.live = false;
+  const pct = v => +(v/G.H*100).toFixed(2);
+  const D = Math.hypot(ball.x-this.x0, ball.y-this.y0);
+  const W = ball.r*2;
+  const cm = BODY.cmPerPx();
+  return {
+    reach_ms: Math.round(now-this.t0),
+    reach_path_pct: pct(this.path),
+    reach_d_pct: pct(D),
+    reach_submoves: countSubmoves(this.v),
+    reach_d_cm: cm!=null ? +(D*cm).toFixed(1) : '',
+    ball_r_pct: pct(ball.r), ball_grip: ball.grip,
+    /* reach-phase index of difficulty; the transport phase gets its own */
+    fitts_id_reach: (W>0 && 2*D/W > 1) ? +Math.log2(2*D/W).toFixed(3) : ''
+  };
+};
+function countSubmoves(v){
+  if (v.length < 3) return 1;
+  const sm = v.map((_,i)=>(v[Math.max(0,i-1)]+v[i]+v[Math.min(v.length-1,i+1)])/3);
+  const peak = Math.max(...sm), thr = peak*0.2;
+  let sub=0;
+  for (let i=1;i<sm.length-1;i++) if (sm[i]>thr && sm[i]>=sm[i-1] && sm[i]>sm[i+1]) sub++;
+  return Math.max(1, sub);
+}
+
+/* =========================================================================
+   11. MOVEMENT TRACKER — transport phase (grasp → release)
+   ========================================================================= */
+const MV = { cur:null, pending:null };
+
+MV.begin = function(ball, now){
+  if (this.pending) this.flush(now, true);        // never lose a row
+  /* read the aperture trace backwards: the last moment the hand was open is
+     the start of closing, and the peak in that window is the maximum aperture
+     the patient actually achieved */
+  const win = AP.window(now-1000);
+  let apMax = 0, onset = null;
+  for (let i=win.length-1; i>=0; i--){
+    if (win[i].v > apMax) apMax = win[i].v;
+    if (onset===null && win[i].v >= CFG.GRIP_OPEN) onset = win[i].t;
+  }
+  this.cur = {
+    apMax: apMax || '', closeMs: onset!==null ? Math.round(now-onset) : '',
+    ap:[], palm:[], t0:now, ball,
+    grasp: P.mode==='mouse' ? 'mouse' : (HAND.curled>=3 ? 'fist' : 'pinch'),
+    graspMs: G.hoverSince ? Math.round(now-G.hoverSince) : '',
+    x0:P.x, y0:P.y, px:P.x, py:P.y, path:0, v:[], t:[],
+    reach: RE.harvest(now, ball)
+  };
+};
+MV.sample = function(now, dt){
+  const m = this.cur; if (!m || dt<=0) return;
+  const d = Math.hypot(P.x-m.px, P.y-m.py);
+  m.path += d; m.v.push(d/dt*1000); m.t.push(now-m.t0);
+  m.px=P.x; m.py=P.y;
+  if (P.mode==='hand'){ m.ap.push(HAND.pinchRatio); m.palm.push(HAND.palm); }
+};
+/* `target` is the colour-matched basket — always defined, and the thing the
+   movement was actually aimed at. `landed` is where the ball was released and
+   may be null. Fitts geometry and drop error belong to the target: a ball
+   dropped 3 cm short of the right basket and one dropped in the wrong basket
+   are different errors, and only the target makes that distinction. */
+MV.end = function(ball, target, landed, correct, dropType, now){
+  const m = this.cur; this.cur = null;
+  if (!m || m.v.length < 3) return;
+  const pct = v => +(v/G.H*100).toFixed(2);
+  const dur  = now - m.t0;
+  const dist = Math.hypot(P.x-m.x0, P.y-m.y0);
+  const cm   = BODY.cmPerPx();
+
+  const v = m.v, sm = v.map((_,i)=>(v[Math.max(0,i-1)]+v[i]+v[Math.min(v.length-1,i+1)])/3);
+  let peak=0, peakI=0;
+  sm.forEach((val,i)=>{ if (val>peak){ peak=val; peakI=i; } });
+
+  const err   = target ? Math.hypot(ball.x-target.x, ball.y-target.y) : '';
+  const apMin = m.ap.length ? Math.min.apply(null,m.ap) : '';
+  const D = target ? Math.hypot(m.x0-target.x, m.y0-target.y) : 0;
+  const W = target ? target.r*2 : 0;
+
+  const row = Object.assign({}, m.reach, {
+    ball_color: CFG.COLORS[ball.ci].id,
+    basket_color: landed ? CFG.COLORS[landed.ci].id : '',
+    basket_zone: target ? target.zone : '',
+    correct: correct?1:0, drop_type:dropType,
+    spawn_side: ball.side,
+    basket_w_level: target ? target.wLevel : '',
+    basket_clamped: target ? target.clamped : '',
+    grasp:m.grasp, grasp_ms:m.graspMs,
+    move_ms:Math.round(dur), path_pct:pct(m.path), dist_pct:pct(dist),
+    path_ratio: dist>4 ? +(m.path/dist).toFixed(2) : '',
+    peak_vel: pct(peak), ttp_pct: dur>0 ? +((m.t[peakI]/dur)*100).toFixed(1) : '',
+    submoves: countSubmoves(m.v),
+    drop_err_pct: err==='' ? '' : pct(err),
+    /* Fitts for the transport phase, from the actual geometry of this trial */
+    fitts_d_pct: target ? pct(D) : '',
+    fitts_w_pct: target ? pct(W) : '',
+    /* 2D/W ≤ 1 means the ball started inside the target: the index of
+       difficulty is undefined there, so blank it rather than logging a
+       negative number that a regression would happily fit. */
+    fitts_id: (target && W>0 && 2*D/W > 1) ? +Math.log2(2*D/W).toFixed(3) : '',
+    fitts_d_cm: (target && cm!=null) ? +(D*cm).toFixed(1) : '',
+    ap_max: m.apMax==='' ? '' : +m.apMax.toFixed(3),
+    ap_min: apMin==='' ? '' : +apMin.toFixed(3),
+    ap_exc: (m.apMax!=='' && apMin!=='') ? +(m.apMax-apMin).toFixed(3) : '',
+    close_ms: m.closeMs,
+    hold_sd: m.ap.length>2 ? +sd(m.ap).toFixed(3) : '',
+    palm_face: m.palm.length ? +mean(m.palm).toFixed(2) : ''
+  });
+
+  /* Release is the half that is usually harder after stroke, and it happens
+     AFTER the ball is dropped — hold the row open until the hand reopens.
+     Blank on timeout rather than capping: a capped value looks like data. */
+  if (P.mode === 'hand'){ this.pending = { row, t0:now }; }
+  else { row.release_ms=''; STATS.logMovement(row); }
+};
+MV.tick = function(now){
+  const p = this.pending; if (!p) return;
+  const open = HAND.landmarks && HAND.pinchRatio >= CFG.GRIP_OPEN;
+  if (open || now - p.t0 > 1500) this.flush(now, !open);
+};
+MV.flush = function(now, timedOut){
+  const p = this.pending; if (!p) return;
+  this.pending = null;
+  p.row.release_ms = timedOut ? '' : Math.round(now - p.t0);
+  STATS.logMovement(p.row);
+};
+
+/* =========================================================================
+   12. PINCH CHECK — clean aperture baseline, uncontaminated by reaching
+   ========================================================================= */
+const PC = { active:false, t0:0, cycles:[], state:'open', curMin:9, curMax:0, lastEdge:0 };
+PC.start = function(now){
+  this.active=true; this.t0=now; this.cycles=[]; this.state='open';
+  this.curMin=9; this.curMax=0; this.lastEdge=now;
+};
+PC.update = function(now){
+  if (!this.active) return;
+  if (P.mode==='hand' && HAND.landmarks){
+    const a = HAND.pinchRatio;
+    if (this.state==='open'){
+      if (a > this.curMax) this.curMax = a;
+      if (a < CFG.GRIP_CLOSE){ this.state='closed'; this.curMin = a; }
+    } else {
+      if (a < this.curMin) this.curMin = a;
+      if (a > CFG.GRIP_OPEN + 0.05){
+        this.cycles.push({ max:this.curMax, min:this.curMin, ms:now-this.lastEdge });
+        this.lastEdge = now; this.state='open'; this.curMax=a; this.curMin=9;
+      }
+    }
+  }
+  if (this.cycles.length >= 5 || now - this.t0 > 20000) this.finish(false);
+};
+PC.finish = function(skipped){
+  if (!this.active) return;
+  this.active = false;
+  const c = this.cycles;
+  if (!skipped && c.length){
+    STATS.push({
+      type:'pinchcheck', cycles:c.length,
+      ap_max:+mean(c.map(x=>x.max)).toFixed(3),
+      ap_min:+mean(c.map(x=>x.min)).toFixed(3),
+      ap_exc:+(mean(c.map(x=>x.max))-mean(c.map(x=>x.min))).toFixed(3),
+      cycle_ms:Math.round(mean(c.map(x=>x.ms))),
+      palm_face:+mean(AP.window(this.t0).map(s=>s.palm)).toFixed(2) || '',
+      grip_close_th:CFG.GRIP_CLOSE, grip_open_th:CFG.GRIP_OPEN
+    });
+  }
+  BODY.freeze();                  // patient has been still and facing forward
+  startCalib();
+};
+
+/* =========================================================================
+   13. REACH ENVELOPE CALIBRATION
+   -------------------------------------------------------------------------
+   Face gives midline and scale for free, but usable reach after stroke is an
+   ability, not an anatomy: no anthropometric ratio can predict it, and its
+   change over weeks is itself an outcome. So this step stays — but it is now
+   4 s of sweeping instead of a dwell plus a sweep.
+   ========================================================================= */
+const CAL = { active:false, t0:0, bins:[] };
+CAL.start = function(now){
+  this.active=true; this.t0=now;
+  this.bins = new Array(CFG.CALIB_BINS).fill(0);
+};
+CAL.update = function(now){
+  if (!this.active) return;
+  if (P.mode==='hand' && HAND.landmarks){
+    const o = BODY.origin();
+    const dx = (P.x-o.x)*sideSign(), dy = o.y-P.y;     // ipsilateral = +dx
+    const r  = Math.hypot(dx,dy);
+    let a = Math.atan2(dy,dx)*180/Math.PI;             // -90..180
+    if (a < 0) a = 0; if (a > 180) a = 180;
+    const bin = clamp(Math.floor(a/(180/CFG.CALIB_BINS)), 0, CFG.CALIB_BINS-1);
+    if (r > this.bins[bin]) this.bins[bin] = r;
+  }
+  if (now - this.t0 > CFG.CALIB_MS) this.finish(false);
+};
+CAL.finish = function(skipped){
+  if (!this.active) return;
+  this.active = false;
+  const hit = this.bins.filter(v=>v>0).sort((a,b)=>a-b);
+  if (!skipped && hit.length >= 4){
+    BODY.R = hit[Math.min(hit.length-1, Math.floor(hit.length*CFG.CALIB_PCTL))];
+    BODY.rSource = 'sweep';
+    BODY.profile = this.bins.map(v=>+(v/G.H*100).toFixed(1));
+    STATS.push({ type:'calib', calib_bins:CFG.CALIB_BINS,
+                 calib_profile:BODY.profile.join('|'),
+                 reach_R_pct:+(BODY.R/G.H*100).toFixed(2) });
+  } else {
+    BODY.R = null; BODY.rSource = skipped ? 'skipped' : 'too-few-bins';
+  }
+  G.screen = 'tutorial';
+  showScreen('tutorial');
+};
+
+/* =========================================================================
+   14. HIT TESTS + GAME UPDATE
+   ========================================================================= */
+function grabRadius(ball){
+  const rr = reachRect();
+  return Math.max(ball.r*CFG.GRAB_PAD_MULT, CFG.GRAB_PAD_MIN_FRAC*Math.min(rr.w,rr.h));
+}
+function ballAt(x,y){
+  let best=null, bd=Infinity;
+  for (const b of G.balls){
+    if (b.done) continue;
+    const d = Math.hypot(x-b.x, y-b.y);
+    if (d < grabRadius(b) && d < bd){ bd=d; best=b; }
+  }
+  return best;
+}
+function basketAt(x,y){
+  let best=null, bd=Infinity;
+  for (const b of G.baskets){
+    const d = Math.hypot(x-b.x, y-b.y);
+    if (d < b.r*1.35 && d < bd){ bd=d; best=b; }
+  }
+  return best;
+}
+function endBtnRect(){
+  const r = reachRect();
+  const w = Math.min(184*G.s, r.w*0.36), h = 54*G.s, m = 14*G.s;
+  return { x: r.x + m + w/2, y: r.y + r.h - m - h/2, w, h };
+}
+
+function update(now, dt){
+  updatePointer(now, dt);
+  G.fps += ((1000/Math.max(1,dt)) - G.fps)*0.05;
+  MV.tick(now);
+
+  if (G.screen==='pinch'){ PC.update(now); return; }
+  if (G.screen==='calib'){ CAL.update(now); return; }
+
+  if (G.screen==='tutorial'){
+    const b = tutBtn();
+    const over = Math.abs(P.x-b.x)<b.w*0.68 && Math.abs(P.y-b.y)<b.h*0.85;
+    G.hover = over ? 'btn' : null;
+    if (over && wantsGrab()){ startRun(); P.needRelease = true; }
+    return;
+  }
+
+  if (G.screen !== 'play') return;
+
+  if (G.phase === 'gap'){
+    if (now >= G.gapUntil) beginWave();
+    return;                                    // no picking up during the gap
+  }
+  const locked = now < G.lockedUntil;
+
+  /* hover (timestamped: hover → grasp latency is a rehab measure) */
+  const prev = G.hover;
+  G.hover = null;
+  if (!G.held && !locked) G.hover = ballAt(P.x, P.y);
+  if (G.hover && G.hover !== prev) G.hoverSince = now;
+
+  if (!locked) RE.sample(now, dt);
+
+  /* pick up */
+  if (!locked && wantsGrab() && !G.held && G.hover){
+    G.held = G.hover;
+    G.grabOff.x = G.held.x-P.x; G.grabOff.y = G.held.y-P.y;
+    G.balls.splice(G.balls.indexOf(G.held),1); G.balls.push(G.held);
+    G.held.pop = 1;
+    if (STATS.wave && !STATS.wave.firstSide) STATS.wave.firstSide = G.held.side;
+    MV.begin(G.held, now);
+  }
+  if (G.held){
+    G.held.tx = P.x + G.grabOff.x*0.5;
+    G.held.ty = P.y + G.grabOff.y*0.5;
+    MV.sample(now, dt);
+  }
+
+  /* release */
+  if (P.released && G.held){
+    const ball = G.held; G.held = null;
+    const target = G.baskets.find(b=>b.ci === ball.ci) || null;
+    const basket = basketAt(ball.x, ball.y);
+    if (basket && basket.ci === ball.ci){
+      MV.end(ball, target, basket, true, 'in_basket', now);
+      ball.done = true; basket.flash = 1; basket.fill++;
+      G.collected++; G.collectedTotal++;
+      if (STATS.wave){ STATS.wave.done++; STATS.wave.correct++; }
+      if (STATS.session) STATS.session.correct++;
+      G.waveLastDrop = now;
+      burst(ball.x, ball.y, CFG.COLORS[ball.ci].hex);
+    } else if (basket){
+      /* wrong basket — a perceptual/cognitive error, not a motor one.
+         The ball goes home rather than vanishing, so the patient can retry. */
+      MV.end(ball, target, basket, false, 'wrong_basket', now);
+      ball.wrong = 1; ball.tx = ball.spawnX; ball.ty = ball.spawnY;
+      if (STATS.wave) STATS.wave.wrong++;
+      if (STATS.session) STATS.session.wrong++;
+      G.banner = { text:'สีไม่ตรงกัน', sub:'ลองใหม่อีกครั้ง', t:now };
+    } else {
+      /* released mid-air — grip failure. The ball stays where it fell. */
+      MV.end(ball, target, null, false, 'dropped', now);
+      ball.tx = clampToReach(ball.x, ball.r); ball.ty = clampToReachY(ball.y, ball.r);
+    }
+    RE.reset(now);
+  }
+
+  /* wave end conditions */
+  const alive = G.balls.filter(b=>!b.done).length;
+  if (!locked){
+    if (G.collected >= CFG.COLLECT_PER_WAVE || alive === 0) endWave('quota');
+    else if (now - G.waveLastDrop > CFG.WAVE_IDLE_MS) endWave('idle');
+    else if (now - G.waveT0 > CFG.WAVE_MAX_MS) endWave('timeout');
+  }
+
+  /* bookkeeping */
+  const w = STATS.wave;
+  if (w){
+    if (P.active){ P.mode==='hand' ? w.hand++ : w.mouse++; } else { w.noHand += dt; }
+    w.fpsSum += G.fps; w.fpsN++; if (G.fps < w.fpsMin) w.fpsMin = G.fps;
+  }
+  if (STATS.session && STATS.session.fps.length < 4000) STATS.session.fps.push(+G.fps.toFixed(1));
+
+  /* จบเกม — dwell to confirm, so a stray pinch cannot end the session */
+  const eb = endBtnRect();
+  const overEnd = Math.abs(P.x-eb.x)<eb.w*0.62 && Math.abs(P.y-eb.y)<eb.h*0.85;
+  G.endHold = clamp(G.endHold + (overEnd && P.down ? dt/1200 : -dt/500), 0, 1);
+  if (G.endHold >= 1){ G.endHold = 0; finishSession('early'); return; }
+
+  /* physics */
+  G.balls.forEach(b=>{
+    const k = 1 - Math.exp(-((b===G.held) ? 34 : 15) * dt/1000);
+    b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
+    const want = (b===G.held) ? 1 : (b===G.hover ? 0.45 : 0);
+    b.lift += (want-b.lift)*0.2;
+    b.pop *= 0.88; b.wrong *= 0.96;
+  });
+  G.baskets.forEach(b=> b.flash *= 0.94 );
+
+  G.particles = G.particles.filter(p=>{
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.22; p.vx*=0.99; p.life-=dt*0.0007;
+    return p.life>0 && p.y<G.H+60;
+  });
+}
+const clampToReach  = (x,r)=>{ const rr=reachRect(); return clamp(x, rr.x+r+6, rr.x+rr.w-r-6); };
+const clampToReachY = (y,r)=>{ const rr=reachRect();
+  return clamp(y, rr.y+r+CFG.BAND_TOP*G.s, rr.y+rr.h-r-CFG.BAND_BOTTOM*G.s); };
+
+function burst(x,y,hex){
+  for (let i=0;i<50;i++){
+    const a = Math.random()*Math.PI*2, sp = 1.5+Math.random()*5;
+    G.particles.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-2.5,
+      life:1, size:(2+Math.random()*4)*G.s, c: i%3 ? hex : '#ffffff' });
+  }
+}
+
+/* =========================================================================
+   15. DRAW
+   ========================================================================= */
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function glassPanel(x,y,w,h,r,alpha=1){
+  ctx.save(); ctx.globalAlpha = alpha;
+  rr(x,y,w,h,r);
+  const g = ctx.createLinearGradient(x,y,x+w,y+h);
+  g.addColorStop(0,'rgba(255,255,255,.16)'); g.addColorStop(1,'rgba(255,255,255,.06)');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.restore();
+}
+function text(str,x,y,size,weight='600',color='#fff',align='center'){
+  ctx.save(); ctx.font=`${weight} ${size}px "Noto Sans Thai", Sarabun, system-ui, sans-serif`;
+  ctx.fillStyle=color; ctx.textAlign=align; ctx.textBaseline='middle';
+  ctx.fillText(str,x,y); ctx.restore();
+}
+function drawScrim(a=0.30){ ctx.save(); ctx.fillStyle=`rgba(7,11,24,${a})`; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
+
+/* Redundant shape coding: hue alone excludes ~8% of men, and the stroke
+   population skews older and male. Every ball and basket carries a shape. */
+function shapePath(shape, x, y, r){
+  ctx.beginPath();
+  if (shape==='circle'){ ctx.arc(x,y,r,0,Math.PI*2); }
+  else if (shape==='square'){ const s=r*0.86; ctx.rect(x-s,y-s,s*2,s*2); }
+  else if (shape==='triangle'){
+    for(let i=0;i<3;i++){ const a=-Math.PI/2 + i*2*Math.PI/3;
+      const px=x+Math.cos(a)*r*1.08, py=y+Math.sin(a)*r*1.08;
+      i? ctx.lineTo(px,py) : ctx.moveTo(px,py); }
+    ctx.closePath();
+  } else if (shape==='diamond'){
+    ctx.moveTo(x,y-r*1.1); ctx.lineTo(x+r*0.9,y); ctx.lineTo(x,y+r*1.1); ctx.lineTo(x-r*0.9,y); ctx.closePath();
+  } else { /* star */
+    for(let i=0;i<10;i++){ const rr2 = i%2 ? r*0.48 : r*1.12;
+      const a = -Math.PI/2 + i*Math.PI/5;
+      const px=x+Math.cos(a)*rr2, py=y+Math.sin(a)*rr2;
+      i? ctx.lineTo(px,py) : ctx.moveTo(px,py); }
+    ctx.closePath();
+  }
+}
+
+function drawBaskets(){
+  G.baskets.forEach(b=>{
+    const c = CFG.COLORS[b.ci];
+    ctx.save();
+    /* opaque rim + dark well: a colour judged against live video is much
+       harder than the same colour on a solid field */
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+    ctx.fillStyle = 'rgba(7,11,24,.62)'; ctx.fill();
+    ctx.lineWidth = Math.max(5, b.r*0.20);
+    ctx.strokeStyle = c.hex; ctx.stroke();
+    if (b.flash>0.02){
+      ctx.globalAlpha = b.flash; ctx.lineWidth = Math.max(8, b.r*0.30);
+      ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    /* the shape is the redundant channel — same glyph as its balls */
+    shapePath(c.shape, b.x, b.y, b.r*0.46);
+    ctx.fillStyle = c.hex; ctx.globalAlpha = 0.9; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.stroke();
+
+    if (b.fill>0) text(String(b.fill), b.x, b.y+b.r+15*G.s, 15*G.s, '700', 'rgba(255,255,255,.85)');
+    ctx.restore();
+  });
+}
+
+function drawBalls(now){
+  G.balls.forEach(b=>{
+    if (b.done) return;
+    const c = CFG.COLORS[b.ci];
+    const r = b.r*(1 + b.pop*0.25 + b.lift*0.10);
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.55)'; ctx.shadowBlur=18*G.s; ctx.shadowOffsetY=6*G.s;
+    shapePath(c.shape, b.x, b.y, r);
+    ctx.fillStyle = c.hex; ctx.fill();
+    ctx.shadowColor='transparent';
+    ctx.lineWidth = Math.max(2.5, r*0.13);
+    ctx.strokeStyle = b.wrong>0.05 ? '#fff' : 'rgba(255,255,255,.92)';
+    ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = c.dark;
+    shapePath(c.shape, b.x, b.y, r*0.62); ctx.stroke();
+    ctx.restore();
+  });
+}
+
+const CONNS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+             [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function drawHand(){
+  if (!HAND.landmarks || P.mode!=='hand') return;
+  const pts = HAND.landmarks.map(l=>mapPoint(l.x,l.y));
+  ctx.save();
+  ctx.strokeStyle = HAND.grabbing ? 'rgba(52,211,153,.75)' : 'rgba(255,255,255,.35)';
+  ctx.lineWidth = 3;
+  CONNS.forEach(([a,b])=>{ ctx.beginPath(); ctx.moveTo(pts[a].x,pts[a].y); ctx.lineTo(pts[b].x,pts[b].y); ctx.stroke(); });
+  ctx.fillStyle = HAND.grabbing ? '#34d399' : 'rgba(255,255,255,.6)';
+  pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p.x,p.y,3.4,0,Math.PI*2); ctx.fill(); });
+  ctx.restore();
+}
+function drawCursor(){
+  if (!P.active) return;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(P.x,P.y, P.down? 13*G.s : 18*G.s, 0, Math.PI*2);
+  ctx.strokeStyle = P.down ? '#34d399' : 'rgba(255,255,255,.85)';
+  ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(P.x,P.y,3,0,Math.PI*2);
+  ctx.fillStyle = P.down ? '#34d399' : 'rgba(255,255,255,.9)'; ctx.fill();
+  ctx.restore();
+}
+function drawParticles(){
+  G.particles.forEach(p=>{
+    ctx.save(); ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill(); ctx.restore();
+  });
+}
+
+function drawHUD(){
+  const rrc = reachRect();
+  const pw = Math.min(360*G.s, rrc.w*0.6), ph = 54*G.s;
+  const px = rrc.x + (rrc.w-pw)/2, py = rrc.y + 10*G.s;
+  glassPanel(px,py,pw,ph,16*G.s);
+  const alive = G.balls.filter(b=>!b.done).length;
+  text(`รอบ ${G.wave+1}/${G.wavesTotal}`, px+pw*0.22, py+ph/2, 19*G.s, '700');
+  text(`เก็บแล้ว ${G.collected}/${CFG.COLLECT_PER_WAVE}`, px+pw*0.58, py+ph/2, 17*G.s, '600', 'rgba(255,255,255,.85)');
+  text(`เหลือ ${alive}`, px+pw*0.87, py+ph/2, 15*G.s, '600', 'rgba(255,255,255,.6)');
+}
+
+function drawEndButton(){
+  const b = endBtnRect();
+  glassPanel(b.x-b.w/2, b.y-b.h/2, b.w, b.h, 14*G.s, 0.95);
+  if (G.endHold>0.01){
+    ctx.save(); rr(b.x-b.w/2, b.y-b.h/2, b.w*G.endHold, b.h, 14*G.s);
+    ctx.fillStyle='rgba(244,63,94,.45)'; ctx.fill(); ctx.restore();
+  }
+  text('จบเกม', b.x, b.y, 18*G.s, '700');
+}
+
+function tutBtn(){
+  const v = reachRect();
+  const w = Math.min(330*G.s, v.w*0.6), h = 84*G.s;
+  return { x: v.x+v.w/2, y: v.y+v.h*0.74, w, h };
+}
+function drawTutorial(){
+  drawScrim(0.45);
+  const v = reachRect();
+  const pw = Math.min(660*G.s, v.w*0.9), ph = 300*G.s;
+  const px = v.x+(v.w-pw)/2, py = v.y + v.h*0.10;
+  glassPanel(px,py,pw,ph,26*G.s);
+  text('จับคู่สีและรูปทรง', px+pw/2, py+46*G.s, 32*G.s, '700');
+  text('หยิบลูกบอล แล้วนำไปใส่ตะกร้าที่มีสีและรูปทรงเดียวกัน',
+       px+pw/2, py+96*G.s, 19*G.s, '600', 'rgba(255,255,255,.85)');
+  text('ไม่ต้องรีบ — เคลื่อนไหวด้วยความเร็วที่สบายและสม่ำเสมอ',
+       px+pw/2, py+128*G.s, 17*G.s, '600', 'rgba(255,255,255,.65)');
+
+  /* live preview of the prescribed baskets, so the OT can sanity-check the
+     layout against the patient before the first ball ever appears */
+  const demoY = py+200*G.s;
+  G.baskets.forEach((b,i)=>{
+    const c = CFG.COLORS[b.ci];
+    const x = px+pw/2 + (i-(G.baskets.length-1)/2)*76*G.s;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x,demoY,26*G.s,0,Math.PI*2);
+    ctx.fillStyle='rgba(7,11,24,.6)'; ctx.fill();
+    ctx.lineWidth=5; ctx.strokeStyle=c.hex; ctx.stroke();
+    shapePath(c.shape, x, demoY, 12*G.s); ctx.fillStyle=c.hex; ctx.fill();
+    ctx.restore();
+    const z = CFG.ZONES.find(z=>z.id===b.zone);
+    text(z ? z.th : '', x, demoY+40*G.s, 11.5*G.s, '600', 'rgba(255,255,255,.7)');
+  });
+
+  const b = tutBtn();
+  ctx.save();
+  rr(b.x-b.w/2,b.y-b.h/2,b.w,b.h,20*G.s);
+  ctx.fillStyle = G.hover==='btn' ? '#34d399' : '#10b981'; ctx.fill();
+  ctx.restore();
+  text('เริ่มเล่น · Start', b.x, b.y, 26*G.s, '700');
+  text('🤏 จีบนิ้วค้างไว้ตรงปุ่ม', b.x, b.y+b.h*0.85, 14*G.s, '600', 'rgba(255,255,255,.7)');
+}
+
+function drawPinchCheck(now){
+  drawScrim(0.5);
+  const v = reachRect();
+  const pw = Math.min(560*G.s, v.w*0.9), ph = 250*G.s;
+  const px = v.x+(v.w-pw)/2, py = v.y+v.h*0.22;
+  glassPanel(px,py,pw,ph,26*G.s);
+  text('เปิด–ปิดมือ 5 ครั้ง', px+pw/2, py+50*G.s, 30*G.s, '700');
+  text('กางนิ้วออกให้สุด แล้วจีบนิ้วโป้งกับนิ้วชี้เข้าหากัน',
+       px+pw/2, py+94*G.s, 18*G.s, '600', 'rgba(255,255,255,.8)');
+
+  /* live aperture meter: the patient can see exactly where the threshold is */
+  const bw = pw*0.72, bx = px+(pw-bw)/2, by = py+140*G.s, bh = 26*G.s;
+  rr(bx,by,bw,bh,bh/2); ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fill();
+  const t = clamp((HAND.pinchRatio-0.2)/1.5, 0, 1);
+  rr(bx,by,Math.max(6,bw*t),bh,bh/2);
+  ctx.fillStyle = HAND.pinchRatio < CFG.GRIP_CLOSE ? '#34d399' : 'rgba(255,255,255,.75)'; ctx.fill();
+  [CFG.GRIP_CLOSE, CFG.GRIP_OPEN].forEach(th=>{
+    const tx = bx + bw*clamp((th-0.2)/1.5,0,1);
+    ctx.save(); ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(tx,by-5); ctx.lineTo(tx,by+bh+5); ctx.stroke(); ctx.restore();
+  });
+  text(`${PC.cycles.length} / 5`, px+pw/2, py+200*G.s, 26*G.s, '700', '#6ee7b7');
+  if (!HAND.landmarks) text('ยกมือขึ้นให้กล้องเห็น', px+pw/2, py+ph+26*G.s, 16*G.s, '600', 'rgba(252,165,165,.9)');
+}
+
+function drawCalib(now){
+  drawScrim(0.42);
+  const o = BODY.origin(), R0 = reachRect().h*0.42;
+  const v = reachRect();
+  const pw = Math.min(560*G.s, v.w*0.9), ph = 150*G.s;
+  const px = v.x+(v.w-pw)/2, py = v.y+16*G.s;
+  glassPanel(px,py,pw,ph,24*G.s);
+  text('กวาดแขนให้ไกลที่สุด', px+pw/2, py+44*G.s, 28*G.s, '700');
+  text('เอื้อมออกไปให้สุด แล้วกวาดเป็นครึ่งวงกลม ช้า ๆ',
+       px+pw/2, py+86*G.s, 17*G.s, '600', 'rgba(255,255,255,.8)');
+  const left = Math.max(0, CFG.CALIB_MS-(now-CAL.t0));
+  text(`${(left/1000).toFixed(0)} วินาที`, px+pw/2, py+120*G.s, 18*G.s, '700', '#6ee7b7');
+
+  /* origin marker + the envelope recorded so far */
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(o.x,o.y,10*G.s,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath();
+  for (let i=0;i<CFG.CALIB_BINS;i++){
+    const a = RAD((i+0.5)*(180/CFG.CALIB_BINS));
+    const r = CAL.bins[i] || R0*0.25;
+    const x = o.x + Math.cos(a)*r*sideSign(), y = o.y - Math.sin(a)*r;
+    i? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+  }
+  ctx.strokeStyle='rgba(52,211,153,.85)'; ctx.lineWidth=4; ctx.stroke();
+  ctx.restore();
+  if (!HAND.landmarks) text('ยกมือขึ้นให้กล้องเห็น', o.x, o.y-30*G.s, 16*G.s, '600', 'rgba(252,165,165,.9)');
+}
+
+function drawBanner(now){
+  if (!G.banner) return;
+  const age = now - G.banner.t;
+  if (age > 1600){ G.banner = null; return; }
+  const a = age<200 ? age/200 : (age>1300 ? (1600-age)/300 : 1);
+  const v = reachRect();
+  ctx.save(); ctx.globalAlpha = clamp(a,0,1);
+  const pw = Math.min(420*G.s, v.w*0.8), ph = 84*G.s;
+  const px = v.x+(v.w-pw)/2, py = v.y+v.h*0.30;
+  glassPanel(px,py,pw,ph,20*G.s);
+  text(G.banner.text, px+pw/2, py+32*G.s, 26*G.s, '700');
+  text(G.banner.sub || '', px+pw/2, py+62*G.s, 16*G.s, '600', 'rgba(255,255,255,.75)');
+  ctx.restore();
+}
+
+function drawStatus(){
+  const v = reachRect();
+  const msgs = [];
+  if (G.aiState!=='ready') msgs.push('กำลังเปิดกล้อง…');
+  else if (P.mode==='mouse') msgs.push('โหมดเมาส์ (ไม่นับเป็นข้อมูลการเคลื่อนไหว)');
+  else if (!HAND.landmarks) msgs.push('ไม่พบมือ — ยกมือขึ้นให้กล้องเห็น');
+  if (G.screen==='play' && !BODY.fresh(performance.now()))
+    msgs.push('ไม่พบใบหน้า — ใช้ค่ากึ่งกลางล่าสุด');
+  if (!msgs.length) return;
+  text(msgs.join('  ·  '), v.x+v.w/2, v.y+v.h-16*G.s, 13.5*G.s, '600', 'rgba(255,255,255,.65)');
+}
+
+function draw(now){
+  ctx.clearRect(0,0,G.W,G.H);
+  if (G.screen==='pinch'){ drawPinchCheck(now); drawHand(); drawCursor(); drawStatus(); return; }
+  if (G.screen==='calib'){ drawCalib(now);      drawHand(); drawCursor(); drawStatus(); return; }
+  if (G.screen==='tutorial'){ drawTutorial();   drawHand(); drawCursor(); drawStatus(); return; }
+  if (G.screen!=='play') return;
+
+  drawScrim(0.22);
+  drawBaskets();
+  drawBalls(now);
+  drawParticles();
+  drawHand();
+  drawEndButton();
+  drawHUD();
+  drawBanner(now);
+  drawCursor();
+  drawStatus();
+}
+
+/* =========================================================================
+   16. MAIN LOOP  (rAF drives both inference and drawing — one timeline)
+   ========================================================================= */
+let last = performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min(64, now-last); last = now;
+  pumpVision(now);
+  update(now, dt);
+  draw(now);
+}
+requestAnimationFrame(loop);
+
+/* =========================================================================
+   17. SCREEN FLOW
+   ========================================================================= */
+const el = id => document.getElementById(id);
+const startScreenEl = el('startScreen'), formScreen = el('formScreen'), endScreen = el('endScreen');
+const stepBar = el('stepBar'), camBanner = el('camBanner');
+
+function showScreen(which){
+  startScreenEl.classList.toggle('hidden', which!=='start');
+  formScreen   .classList.toggle('hidden', which!=='form');
+  endScreen    .classList.toggle('hidden', which!=='end');
+  topBar       .classList.toggle('hidden', which!=='play');
+  stepBar      .classList.toggle('hidden', which!=='pinch' && which!=='calib');
+}
+function showCamProblem(info){
+  el('camTitle').textContent = info.th; el('camFix').textContent = info.fix;
+  camBanner.classList.remove('hidden');
+}
+function hideCamProblem(){ camBanner.classList.add('hidden'); G.camMsg = null; }
+
+/* --- zone checklist --- */
+function renderZones(){
+  const wrap = el('zoneWrap'); wrap.innerHTML='';
+  CFG.ZONES.forEach(z=>{
+    const on = PRESCRIBED.includes(z.id);
+    const b = document.createElement('button');
+    b.type='button';
+    b.className = 'zonechip rounded-xl px-3 py-2.5 text-left text-sm transition ' + (on?'on':'');
+    b.innerHTML = `<div class="font-semibold">${z.th}</div>
+                   <div class="text-xs text-white/60 mt-0.5">${z.note}</div>`;
+    b.onclick = ()=>{
+      const i = PRESCRIBED.indexOf(z.id);
+      if (i>=0) PRESCRIBED.splice(i,1);
+      else if (PRESCRIBED.length < 5) PRESCRIBED.push(z.id);
+      renderZones();
+    };
+    wrap.appendChild(b);
+  });
+}
+
+async function bootCamera(){
+  try{ hideCamProblem(); await initVision(); }
+  catch(err){ G.aiState='unavailable'; showCamProblem(cameraProblem(err)); }
+}
+
+el('btnStart').onclick = ()=>{
+  G.screen='form'; showScreen('form');
+  refreshNameList(); renderZones();
+  bootCamera();                       // boots while they fill the form
+};
+el('btnBackStart').onclick = ()=>{ G.screen='start'; showScreen('start'); };
+
+function refreshNameList(){
+  const dl = el('knownNames'); dl.innerHTML='';
+  knownNames().forEach(n=>{ const o=document.createElement('option'); o.value=n; dl.appendChild(o); });
+}
+el('fName').addEventListener('input', ()=>{
+  const k = playerKey(el('fName').value);
+  const seen = knownNames().some(n=>playerKey(n)===k);
+  el('fSeen').classList.toggle('hidden', !(seen && k));
+  if (seen && k) el('fSeen').textContent = 'เคยเล่นแล้ว — ผลจะต่อจากครั้งก่อน';
+});
+
+el('btnForm').onclick = ()=>{
+  const name = el('fName').value.trim();
+  el('fErr').classList.toggle('hidden', !!name);
+  const zonesOk = PRESCRIBED.length >= 3 && PRESCRIBED.length <= 5;
+  el('zErr').classList.toggle('hidden', zonesOk);
+  if (!name || !zonesOk) return;
+
+  PLAYER.name = name; PLAYER.key = playerKey(name);
+  PLAYER.note = el('fNote').value.trim();
+  PLAYER.side = el('fSide').value; PLAYER.posture = el('fPose').value;
+  rememberName(name);
+
+  G.side = PLAYER.side;
+  G.gripMode = el('fGrip').value;
+  G.wavesTotal = parseInt(el('fWaves').value,10) || CFG.WAVES_DEFAULT;
+
+  /* basket width levels cycle across waves, shuffled in blocks of 3 — each
+     level appears equally early and late, so the Fitts slope is not
+     contaminated by fatigue drifting monotonically through the session */
+  G.wSeq = [];
+  while (G.wSeq.length < G.wavesTotal) G.wSeq = G.wSeq.concat(shuffle(CFG.BASKET_W_LEVELS));
+  G.wSeq = G.wSeq.slice(0, G.wavesTotal);
+
+  STATS.start();
+  buildBaskets();
+  showScreen('pinch'); G.screen='pinch'; PC.start(performance.now());
+};
+
+el('btnSkipStep').onclick = ()=>{
+  if (G.screen==='pinch') PC.finish(true);
+  else if (G.screen==='calib') CAL.finish(true);
+};
+function startCalib(){
+  G.screen='calib'; showScreen('calib'); CAL.start(performance.now());
+}
+function startRun(){
+  G.screen='play'; showScreen('play');
+  G.wave=0; G.collectedTotal=0; G.omit={left:0,right:0};
+  beginWave();
+}
+function finishSession(reason){
+  if (G.screen!=='play') return;
+  if (STATS.wave){
+    const left  = G.balls.filter(b=>!b.done && b.side==='left').length;
+    const right = G.balls.filter(b=>!b.done && b.side==='right').length;
+    G.omit.left += left; G.omit.right += right;
+    STATS.logWave(reason, left, right);
+  }
+  STATS.endSession(reason);
+  G.screen='end'; showScreen('end');
+  el('finalBalls').textContent = G.collectedTotal;
+  el('finalWaves').textContent = G.wave;
+  const L=G.omit.left, R=G.omit.right, tot=L+R;
+  el('finalNeglect').innerHTML = tot
+    ? `ลูกที่ไม่ได้เก็บ — ซ้าย ${L} · ขวา ${R}` +
+      (Math.abs(L-R) >= 3 ? `<br><span class="text-amber-300">พบความไม่สมมาตร — ตรวจสอบเพิ่มเติม (อาจเกิดจากข้อจำกัดการเอื้อมได้)</span>` : '')
+    : '';
+}
+el('btnSkipWave').onclick = ()=>{ if (G.screen==='play') endWave('skipped'); };
+
+/* Debug handle. Read-only in practice, but it is what makes a headless test
+   (and a console poke on a clinic laptop) possible without a build step. */
+window.BASKET_DEBUG = { G, BODY, CFG, STATS, MV, PC, CAL, P, HAND,
+                        zonePoint, reachRect, videoRect, mapPoint, get prescribed(){ return PRESCRIBED; } };
+
+el('btnNextPlayer').onclick = ()=>{
+  el('fName').value=''; el('fNote').value='';
+  STATS.start();
+  G.screen='form'; showScreen('form'); refreshNameList(); renderZones();
+};
+el('btnAgain').onclick = ()=>{
+  STATS.start(); buildBaskets();
+  G.screen='pinch'; showScreen('pinch'); PC.start(performance.now());
+};
+el('btnCsv').onclick = ()=> STATS.download();
+el('camRetry').onclick = ()=>{ releaseCamera(); bootCamera(); };
+el('camMouse').onclick = ()=>{ hideCamProblem(); };
+el('btnFit').onclick = ()=> setFit(FITS[(FITS.indexOf(G.fit)+1)%FITS.length]);
+
+window.addEventListener('keydown', e=>{
+  if (e.key==='f') el('btnFit').click();
+  if (e.key==='Escape' && G.screen==='play') finishSession('early');
+});
+
+/* --- boot --- */
+setFit(store.get('basket.fit') || 'fill');
+renderZones();
+resize();
+showScreen('start');
+</script>
+</body>
+</html>
