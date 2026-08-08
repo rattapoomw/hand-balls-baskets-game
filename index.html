@@ -3,34 +3,36 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>เก็บลูกบอลลงตะกร้า — Ball &amp; Basket AR</title>
+<title>เกมหยิบลูกบอลลงกล่อง · Ball &amp; Box</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
 
+<!-- Settings live in ballbox_config.js. Edit that file, not this one.
+     Missing or partial config falls back to built-in defaults. -->
+<script src="ballbox_config.js"></script>
+
 <style>
-  :root{
-    --glass: rgba(255,255,255,.12);
-    --glass-strong: rgba(255,255,255,.20);
-    --line: rgba(255,255,255,.35);
-  }
   html,body{height:100%;margin:0;overflow:hidden;background:#070b18;}
   body{font-family:"Noto Sans Thai","Sarabun",system-ui,sans-serif;-webkit-tap-highlight-color:transparent;}
+
   /* The video is positioned and sized by applyVideoLayout() from videoRect().
-     object-fit is deliberately NOT used for layout: it picks the fill axis
-     itself, and any disagreement with videoRect() shows up as a hand skeleton
-     that is the wrong size — aligned at the centre, drifting at the edges.
-     One source of truth instead. object-fit:fill just stretches the frame to
-     the box we give it, and that box always carries the camera's own aspect. */
+     object-fit is deliberately NOT used for layout: it chooses the fill axis
+     itself, and any disagreement with videoRect() appears as a hand skeleton
+     of the wrong size — aligned at the centre, drifting at the edges. One
+     source of truth. object-fit:fill just stretches the frame into the box we
+     give it, and that box always carries the camera's own aspect ratio. */
   #video{position:fixed;left:0;top:0;width:100%;height:100%;object-fit:fill;
          transform:scaleX(-1);transform-origin:50% 50%;z-index:0;background:#070b18;}
   #canvas{position:fixed;inset:0;width:100%;height:100%;z-index:10;touch-action:none;cursor:none;}
   .layer{position:fixed;inset:0;z-index:20;pointer-events:none;}
+
   .glass{background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
     backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-    border:1px solid var(--line);box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.35);}
+    border:1px solid rgba(255,255,255,.35);
+    box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.35);}
   .btn-glow{box-shadow:0 12px 32px rgba(16,185,129,.45), inset 0 1px 0 rgba(255,255,255,.5);}
   .fade-in{animation:fade .45s ease both}
   @keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
@@ -38,10 +40,17 @@
   .hidden{display:none!important}
   select, textarea, input{ color-scheme: dark; color:#fff; }
   select option{ background:#0f172a; color:#f1f5f9; }
-  .zonechip{ border:1px solid rgba(255,255,255,.28); }
-  .zonechip.on{ background:rgba(16,185,129,.28); border-color:rgba(52,211,153,.8); }
+  .chip{ border:1px solid rgba(255,255,255,.28); }
+  .chip.on{ background:rgba(16,185,129,.28); border-color:rgba(52,211,153,.8); }
   input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible{
     outline:2px solid #6ee7b7; outline-offset:2px;
+  }
+
+  /* Light theme: the DOM chrome is white-on-glass, so flip it. */
+  body.lightui .glass{
+    background:linear-gradient(160deg,rgba(15,23,42,.92),rgba(30,41,59,.88));
+    border-color:rgba(15,23,42,.25);
+    box-shadow:0 24px 60px rgba(15,23,42,.25), inset 0 1px 0 rgba(255,255,255,.12);
   }
 </style>
 </head>
@@ -50,40 +59,42 @@
 <video id="video" playsinline autoplay muted></video>
 <canvas id="canvas"></canvas>
 
-<!-- ===== Top control bar (mouse clickable) ===== -->
+<!-- ===== Top controls (mouse-clickable; the hand-operable ones are drawn) ===== -->
 <div class="layer">
   <div id="topBar" class="hidden absolute top-3 right-3 flex gap-2" style="pointer-events:auto">
-    <button id="btnFit" class="glass rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/20 transition">มุมมอง: พอดีความสูง</button>
-    <button id="btnSkipWave" class="glass rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/20 transition">ข้ามรอบนี้</button>
+    <button id="syncChip" class="glass rounded-xl px-2.5 py-1.5 text-xs md:text-sm font-semibold hover:bg-white/20 transition whitespace-nowrap">☁️</button>
+    <button id="btnTheme" class="glass rounded-xl px-2.5 py-1.5 text-xs md:text-sm font-semibold hover:bg-white/20 transition whitespace-nowrap">ภาพ (V)</button>
+    <button id="btnFit"   class="glass rounded-xl px-2.5 py-1.5 text-xs md:text-sm font-semibold hover:bg-white/20 transition whitespace-nowrap">มุมมอง</button>
+    <button id="btnSkipWave" class="glass rounded-xl px-2.5 py-1.5 text-xs md:text-sm font-semibold hover:bg-white/20 transition whitespace-nowrap">ข้ามรอบ</button>
   </div>
 </div>
 
-<!-- ===== Start screen ===== -->
+<!-- ===== Start ===== -->
 <div id="startScreen" class="layer flex items-center justify-center px-5 overflow-y-auto" style="pointer-events:auto">
   <div class="glass rounded-3xl max-w-lg w-full p-8 text-center fade-in my-6">
-    <div class="text-6xl mb-3">🧺 ✋</div>
-    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">เก็บลูกบอลลงตะกร้า</h1>
+    <div class="text-6xl mb-3">📦 ✋</div>
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">เกมหยิบลูกบอลลงกล่อง</h1>
     <p class="mt-2 text-white/75 leading-relaxed">
-      เกม AR ฝึกการเอื้อมและหยิบจับ · จับคู่สีและรูปทรง<br>
-      <span class="text-white/55 text-sm">Reach, grasp, carry, release. Colour + shape matching — no reading required.</span>
+      เกม AR ฝึกการเอื้อม หยิบ และปล่อย · จับคู่สีและรูปทรง<br>
+      <span class="text-white/55 text-sm">ไม่ต้องอ่านหนังสือ — ใช้ได้กับผู้ที่มีภาวะบกพร่องทางภาษา</span>
     </p>
     <ul class="mt-5 text-left text-sm text-white/80 space-y-1.5">
       <li>🤏 <b>จีบนิ้ว</b> หรือ ✊ <b>กำมือ</b> = หยิบลูกบอล</li>
-      <li>🖐️ <b>แบมือ</b> เหนือตะกร้า = ปล่อยลง</li>
-      <li>🎨 ลูกบอลลงตะกร้าที่มี <b>สีและรูปทรงเดียวกัน</b></li>
+      <li>🖐️ <b>แบมือ</b> เหนือกล่อง = ปล่อยลง</li>
+      <li>🎨 ใส่กล่องที่มี <b>สีและรูปทรงเดียวกัน</b></li>
       <li>🖱️ ไม่มีกล้อง? ใช้เมาส์ลากได้ทันที</li>
     </ul>
     <button id="btnStart" class="mt-7 w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-[.99] transition px-6 py-4 text-lg font-bold btn-glow">
       เริ่ม · Start
     </button>
     <p class="mt-3 text-xs text-white/55">
-      ระบบจะขออนุญาตใช้กล้อง — ภาพทั้งหมดประมวลผลในเครื่องนี้ ไม่มีการส่งภาพออก<br>
-      บันทึกเฉพาะตัวเลขที่คำนวณได้ (ตำแหน่งกึ่งกลางลำตัว ระยะเอื้อม การเอียงตัว)
+      ระบบขออนุญาตใช้กล้อง — ภาพประมวลผลในเครื่องนี้เท่านั้น ไม่มีการส่งภาพออก<br>
+      บันทึกเฉพาะตัวเลขที่คำนวณได้ (แนวกึ่งกลางลำตัว ระยะเอื้อม การเอียงตัว)
     </p>
   </div>
 </div>
 
-<!-- ===== Camera problem banner ===== -->
+<!-- ===== Camera problem ===== -->
 <div class="layer">
   <div id="camBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 w-[92%] max-w-xl" style="pointer-events:auto">
     <div class="glass rounded-2xl px-4 py-3" style="border-color:rgba(252,165,165,.55)">
@@ -102,25 +113,23 @@
   </div>
 </div>
 
-<!-- ===== Skip bar for canvas-drawn steps (pinch check / calibration) ===== -->
+<!-- ===== Skip bar for the canvas-drawn steps ===== -->
 <div class="layer">
   <div id="stepBar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2" style="pointer-events:auto">
-    <button id="btnSkipStep" class="glass rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-white/20 transition">
-      ข้ามขั้นตอนนี้
-    </button>
+    <button id="btnSkipStep" class="glass rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-white/20 transition">ข้ามขั้นตอนนี้</button>
   </div>
 </div>
 
-<!-- ===== Player / prescription form ===== -->
+<!-- ===== Player form / prescription ===== -->
 <div id="formScreen" class="layer hidden flex items-center justify-center px-5 overflow-y-auto" style="pointer-events:auto">
   <div class="glass rounded-3xl max-w-xl w-full p-7 my-6 fade-in">
     <h2 class="text-2xl font-bold text-center">ข้อมูลผู้เล่น และการสั่งฝึก</h2>
-    <p class="mt-1 text-center text-white/60 text-sm">ชื่อจะใช้เป็นรหัสอ้างอิงของผู้เล่นในการบันทึกผล</p>
+    <p class="mt-1 text-center text-white/60 text-sm">ชื่อใช้เป็นรหัสอ้างอิงของผู้เล่นในการบันทึกผล</p>
 
     <label class="block mt-5 text-sm font-semibold" for="fName">ชื่อผู้เล่น <span class="text-rose-300">*</span></label>
     <input id="fName" list="knownNames" maxlength="40" autocomplete="off"
       class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-4 py-3 placeholder-white/40 focus:outline-none focus:border-emerald-300"
-      placeholder="เช่น P001 หรือ ชื่อเล่น" />
+      placeholder="เช่น P-001" />
     <datalist id="knownNames"></datalist>
     <p id="fErr" class="hidden mt-1 text-sm text-rose-300">กรุณากรอกชื่อผู้เล่นก่อน</p>
     <p id="fSeen" class="hidden mt-1 text-sm text-emerald-300"></p>
@@ -129,43 +138,45 @@
       <div>
         <label class="block text-sm font-semibold" for="fSide">แขนที่ฝึก <span class="text-rose-300">*</span></label>
         <select id="fSide" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
-          <option value="right">ขวา</option>
-          <option value="left">ซ้าย</option>
+          <option value="right">ขวา</option><option value="left">ซ้าย</option>
         </select>
       </div>
       <div>
         <label class="block text-sm font-semibold" for="fPose">ท่าทาง</label>
         <select id="fPose" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
-          <option value="">-</option><option value="sit" selected>นั่ง</option>
+          <option value="">-</option><option value="sit">นั่ง</option>
           <option value="stand">ยืน</option><option value="wheelchair">รถเข็น</option>
         </select>
       </div>
     </div>
 
-    <p class="mt-5 text-sm font-semibold">ตำแหน่งตะกร้า — เลือก 3–5 โซน</p>
-    <p class="text-xs text-white/55 mt-0.5">ตำแหน่งตะกร้าเป็นตัวกำหนดการเคลื่อนไหวที่ผู้ป่วยต้องทำ เลือกให้ตรงกับเป้าหมายการรักษา</p>
+    <p class="mt-5 text-sm font-semibold">ตำแหน่งกล่อง — เลือก 3–5 โซน</p>
+    <p class="text-xs text-white/55 mt-0.5">ตำแหน่งกล่องเป็นตัวกำหนดการเคลื่อนไหวที่ผู้ป่วยต้องทำ</p>
     <div id="zoneWrap" class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
     <p id="zErr" class="hidden mt-1 text-sm text-rose-300">เลือกอย่างน้อย 3 โซน (ไม่เกิน 5)</p>
+    <p id="stagePreview" class="mt-1.5 text-xs text-emerald-300"></p>
 
     <div class="grid grid-cols-2 gap-3 mt-4">
       <div>
         <label class="block text-sm font-semibold" for="fGrip">ขนาดลูกบอล (ชนิดการจับ)</label>
         <select id="fGrip" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
-          <option value="mixed" selected>คละขนาด</option>
-          <option value="small">เล็ก — จับแบบหยิก (precision)</option>
-          <option value="large">ใหญ่ — จับแบบกำ (power)</option>
+          <option value="mixed">คละขนาด</option>
+          <option value="small">เล็ก — จับแบบหยิก</option>
+          <option value="large">ใหญ่ — จับแบบกำ</option>
         </select>
       </div>
       <div>
-        <label class="block text-sm font-semibold" for="fWaves">จำนวนรอบ</label>
-        <select id="fWaves" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
-          <option value="3">3 รอบ (ทดลอง)</option>
-          <option value="6">6 รอบ</option>
-          <option value="8" selected>8 รอบ (แนะนำ)</option>
-          <option value="12">12 รอบ</option>
-        </select>
+        <label class="block text-sm font-semibold" for="fWaves">จำนวนรอบต่อด่าน</label>
+        <select id="fWaves" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300"></select>
       </div>
     </div>
+
+    <label class="block mt-4 text-sm font-semibold" for="fMode">ลำดับความยาก</label>
+    <select id="fMode" class="mt-1 w-full rounded-xl bg-white/10 border border-white/30 px-3 py-2.5 focus:outline-none focus:border-emerald-300">
+      <option value="zone">ตามโซน — ใกล้ไปไกล, ขนาดกล่องสุ่ม (แนะนำสำหรับงานวิจัย)</option>
+      <option value="progressive">ไล่ระดับ — ใกล้ไปไกล และกล่องเล็กลงทุกด่าน</option>
+    </select>
+    <p id="modeNote" class="mt-1 text-xs text-white/55"></p>
 
     <label class="block mt-4 text-sm font-semibold" for="fNote">รายละเอียด (ไม่บังคับ)</label>
     <textarea id="fNote" rows="2" maxlength="200"
@@ -179,124 +190,117 @@
   </div>
 </div>
 
-<!-- ===== Finish screen ===== -->
+<!-- ===== End ===== -->
 <div id="endScreen" class="layer hidden flex items-center justify-center px-5 overflow-y-auto" style="pointer-events:auto">
   <div class="glass rounded-3xl max-w-md w-full p-8 text-center fade-in my-6">
     <div class="text-7xl mb-2">🎉</div>
     <h2 class="text-4xl font-bold">เสร็จแล้ว!</h2>
-    <p class="mt-2 text-white/75">เก็บได้ <span id="finalBalls">0</span> ลูก · <span id="finalWaves">0</span> รอบ</p>
+    <div id="finalScore" class="mt-3 text-5xl font-bold text-emerald-300"></div>
+    <p class="mt-2 text-white/75">
+      เก็บได้ <span id="finalBalls">0</span> ลูก · <span id="finalWaves">0</span> รอบ
+    </p>
+    <div id="finalPct" class="mt-1 text-sm text-white/70"></div>
     <div id="finalNeglect" class="mt-4 text-sm text-white/70"></div>
-    <button id="btnNextPlayer" class="mt-7 w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 transition px-6 py-4 text-lg font-bold btn-glow">
-      ผู้เล่นคนถัดไป · Next player
-    </button>
-    <button id="btnAgain" class="mt-3 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">
-      เล่นอีกครั้ง (คนเดิม)
-    </button>
-    <button id="btnCsv" class="mt-3 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">
-      ⬇️ ดาวน์โหลดสถิติ (CSV)
-    </button>
+    <button id="btnSurvey" class="hidden mt-5 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">📝 แบบประเมินความพึงพอใจ</button>
+    <button id="btnNextPlayer" class="mt-5 w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 transition px-6 py-4 text-lg font-bold btn-glow">ผู้เล่นคนถัดไป</button>
+    <button id="btnAgain" class="mt-3 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">เล่นอีกครั้ง (คนเดิม)</button>
+    <button id="btnCsv" class="mt-3 w-full rounded-2xl glass hover:bg-white/20 transition px-6 py-3 text-sm font-semibold">⬇️ ดาวน์โหลดสถิติ (CSV)</button>
   </div>
 </div>
 
 <script type="module">
 /* =========================================================================
-   BALL & BASKET — AR colour/shape sorting for upper-limb rehabilitation
-   Companion to the Thai sentence AR game. Same engine, same log pipeline.
+   BALL & BOX — AR colour/shape sorting for upper-limb rehabilitation
+   Standalone. Its own config, its own Apps Script endpoint, its own Sheet.
 
-   Layers:
-     ENGINE  camera · MediaPipe (hands + face) · gesture · pointer · stats
-     BODY    face-derived midline / scale / trunk, reach envelope (R)
-     GAME    zones · baskets · waves · balls · Fitts
+     ENGINE   camera · MediaPipe hands+face · gesture · pointer · logging
+     BODY     face-derived midline / scale / trunk, reach envelope
+     GAME     zones · boxes · stages · waves · balls · Fitts · scoring
    ========================================================================= */
 
 import { FilesetResolver, HandLandmarker, FaceDetector }
   from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
+const APP_VERSION = '1.0-ballbox';
+const GAME_ID     = 'ball_box';
+
 /* =========================================================================
-   0. TUNABLE CONSTANTS  — everything an OT or a dev might want to change
+   1. CONFIG — every setting read through CF() so a missing or partial
+      ballbox_config.js still leaves the game fully working.
    ========================================================================= */
-const CFG = {
-  /* --- logging --- */
-  STATS_URL : '',                 // ← paste the Apps Script /exec URL here
-  GAME_ID   : 'ball_basket',
-  APP_VER   : '1.0-basket-draft',
+const RAW_CFG = (typeof window !== 'undefined' && window.BALLBOX_CONFIG) || {};
+if (!window.BALLBOX_CONFIG) console.warn('ballbox_config.js not found — using built-in defaults.');
+function CF(path, dflt){
+  let v = RAW_CFG;
+  for (const k of path.split('.')){
+    if (v == null || typeof v !== 'object' || !(k in v)) return dflt;
+    v = v[k];
+  }
+  return (v === undefined || v === null || v === '') ? dflt : v;
+}
 
-  /* --- session shape --- */
-  WAVES_DEFAULT   : 8,     // overridden by the form
-  PAIRS_PER_WAVE  : 3,     // 3 mirrored pairs = 6 balls, symmetric about midline
-  COLLECT_PER_WAVE: 4,     // wave ends after this many — the rest are OMISSIONS
-  WAVE_IDLE_MS    : 14000, // ...or after this long with no successful drop
-  WAVE_MAX_MS     : 75000, // hard ceiling per wave
+/* ---- zone catalogue -----------------------------------------------------
+   Stored as body-relative polar coordinates: an angle from the ipsilateral
+   horizontal and a radius as a fraction of the patient's measured reach.
+   That is what makes a prescription reproduce across sessions even though
+   the patient sits differently and the screen size changes.
 
-  /* --- Fitts: basket width levels, cycled across waves (balanced vs fatigue) --- */
-  BASKET_W_LEVELS : [1.0, 0.70, 0.50],
-  BASKET_R_BASE   : 0.085,   // × min(reach w,h) at W level 1.0
+   `tier` drives both the stage order and the point value. It is declared
+   rather than derived from `rad`, because three zones at similar radii would
+   otherwise collapse into a single stage.                                 */
+const ZONES = [
+  { id:'ipsi_mid',      tier:'near', ang: 12, rad:0.60,
+    th:'ข้างเดียวกัน (กลาง)', note:'ท่าพื้นฐาน ใช้เป็นค่าอ้างอิง' },
+  /* near_low is the COMPENSATORY pattern. It is drawn as a box so it acts as
+     a distractor for the colour/shape decision, but it is never given balls:
+     making it a target would be asking the patient to rehearse the very
+     movement the therapy is trying to replace. It also sits inside the near
+     field where the balls spawn, so a symmetric pair could not fit between
+     the body and the box anyway. */
+  { id:'near_low',      tier:'near', ang:-40, rad:0.38, target:false,
+    th:'ใกล้และต่ำ (กล่องหลอก)', note:'ท่าชดเชย — เป็นกล่องหลอก ไม่มีลูกบอลส่งไป' },
+  { id:'cross_midline', tier:'mid',  ang:158, rad:0.68,
+    th:'ข้ามแนวกลางลำตัว',    note:'ฝึกข้ามแนวกลางลำตัว' },
+  { id:'elevate',       tier:'mid',  ang: 68, rad:0.72,
+    th:'ยกสูง',               note:'ยก/กางหัวไหล่' },
+  { id:'extend',        tier:'far',  ang:  8, rad:0.95,
+    th:'เอื้อมไกล',           note:'เหยียดข้อศอก' }
+];
+const TIER_ORDER = ['near','mid','far'];
+const TIER_TH    = { near:'ใกล้', mid:'กลาง', far:'ไกล' };
 
-  /* --- where balls spawn: near field, kept clear of the basket band --- */
-  SPAWN_R   : [0.18, 0.52],   // × R, from the shoulder origin
-  SPAWN_ANG : [15, 80],       // degrees above the ipsilateral horizontal
-  BAND_TOP    : 78,           // px × s reserved for the HUD panel
-  BAND_BOTTOM : 78,           // px × s reserved for the จบเกม button + status
+/* ---- colours ------------------------------------------------------------
+   Okabe–Ito: designed to stay distinguishable under colour-vision deficiency,
+   which matters because ~8% of men are affected and the stroke population
+   skews older and male. It also survives all three themes, unlike a palette
+   with white in it. Shape is a REDUNDANT channel, never decoration: hue is
+   never the only thing carrying the match.                                */
+const COLORS = [
+  { id:'orange', hex:'#E69F00', dark:'#6b4a00', shape:'circle',   th:'ส้ม' },
+  { id:'sky',    hex:'#56B4E9', dark:'#14425c', shape:'square',   th:'ฟ้า' },
+  { id:'green',  hex:'#009E73', dark:'#004234', shape:'triangle', th:'เขียว' },
+  { id:'red',    hex:'#D55E00', dark:'#5c2800', shape:'star',     th:'แดง' },
+  { id:'purple', hex:'#CC79A7', dark:'#5c2f45', shape:'diamond',  th:'ม่วง' }
+];
 
-  /* --- grip prescription: ball radius as a fraction of min(reach w,h) --- */
-  BALL_R : { small:0.032, large:0.062 },
-  /* the hit test is deliberately more forgiving than the drawn ball: below
-     ~4% of the screen, fingertip jitter dominates and you measure the tracker,
-     not the patient. Drawn size still drives the aperture they scale to —
-     verify with ap_min that a small ball really did produce a small grip. */
-  GRAB_PAD_MIN_FRAC : 0.045,
-  GRAB_PAD_MULT     : 1.45,
-
-  /* --- reach envelope calibration --- */
-  CALIB_MS      : 9000,
-  CALIB_BINS    : 12,        // 12 × 15° over the 180° frontal half-plane
-  CALIB_PCTL    : 0.80,      // R = 80th percentile of per-bin maxima
-  R_FALLBACK    : 0.42,      // × reachRect height, if calibration is skipped
-
-  /* --- body model (face-derived) --- */
-  FACE_HZ            : 4,    // head moves slowly; don't spend frames on it
-  ASSUMED_IPD_CM     : 6.3,  // ±4mm individual variance → ~6% scale error
-  SHOULDER_DROP_IPD  : 3.2,  // eye line → suprasternal notch, in IPD units
-  YAW_GATE           : 0.55, // |yaw proxy| above this → don't trust midline
-  FACE_STALE_MS      : 1500,
-
-  /* --- gesture --- */
-  GRIP_CLOSE : 0.62,
-  GRIP_OPEN  : 0.95,
-
-  /* --- zone geometry: angle from the ipsilateral horizontal, radius × R --- */
-  ZONES : [
-    { id:'ipsi_mid',      th:'ข้างเดียวกัน (กลาง)', en:'Ipsilateral mid',
-      ang: 12, rad:0.60, note:'ท่าพื้นฐาน ใช้เป็นค่าอ้างอิง', on:true },
-    { id:'cross_midline', th:'ข้ามแนวกลางลำตัว',    en:'Cross midline',
-      ang:158, rad:0.68, note:'ฝึกข้ามแนวกลางลำตัว', on:true },
-    { id:'elevate',       th:'ยกสูง',                en:'Elevate',
-      ang: 68, rad:0.72, note:'ยก/กางหัวไหล่', on:true },
-    { id:'extend',        th:'เอื้อมไกล',            en:'Reach far',
-      ang:  8, rad:0.95, note:'เหยียดข้อศอก', on:false },
-    { id:'near_low',      th:'ใกล้และต่ำ (ควบคุม)',  en:'Near & low (control)',
-      ang:-40, rad:0.38, note:'ท่าชดเชย — ใช้เปรียบเทียบเท่านั้น', on:false }
-  ],
-
-  /* --- colours: never hue alone. Shape is redundant coding on ball AND basket.
-         High contrast, well separated — not pastels (cataracts, low contrast
-         sensitivity in the older stroke population). --- */
-  COLORS : [
-    { id:'red',    hex:'#ef4444', dark:'#7f1d1d', shape:'circle',   th:'แดง' },
-    { id:'blue',   hex:'#3b82f6', dark:'#1e3a8a', shape:'square',   th:'น้ำเงิน' },
-    { id:'yellow', hex:'#facc15', dark:'#713f12', shape:'triangle', th:'เหลือง' },
-    { id:'green',  hex:'#22c55e', dark:'#14532d', shape:'star',     th:'เขียว' },
-    { id:'white',  hex:'#f1f5f9', dark:'#334155', shape:'diamond',  th:'ขาว' }
-  ],
-
-  /* --- MediaPipe model assets --- */
-  WASM : 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm',
-  HAND_MODEL : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-  FACE_MODEL : 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite'
-};
+/* ---- geometry constants not worth exposing in config -------------------- */
+const BOX_R_BASE     = 0.085;   // × min(visible w,h) at W level 1.0
+const BALL_R         = { small:0.032, large:0.062 };
+/* The hit test is deliberately more forgiving than the drawn ball. Below
+   about 4% of the screen, fingertip jitter dominates and you would be
+   measuring the tracker rather than the patient. The DRAWN size still drives
+   the aperture the patient scales their grip to — check ap_min to confirm a
+   small ball really did produce a small grip. */
+const GRAB_PAD_MIN   = 0.045;
+const GRAB_PAD_MULT  = 1.45;
+const SPAWN_R        = [0.15, 0.48];   // × R — the NEAR field
+const SPAWN_ANG      = [15, 80];
+const BAND_TOP       = 82;             // px × s reserved for the HUD
+const BAND_BOTTOM    = 82;             // px × s reserved for จบเกม + status
+const FACE_STALE_MS  = 1500;
 
 /* =========================================================================
-   1. SMALL UTILITIES
+   2. UTILITIES
    ========================================================================= */
 const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
 const mean  = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
@@ -305,8 +309,15 @@ const sd    = a => { if(a.length<2) return 0; const m=mean(a);
 const med   = a => { if(!a.length) return null; const s=[...a].sort((x,y)=>x-y), m=s.length>>1;
                      return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
 const uid   = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const RAD   = d => d*Math.PI/180;
+
+/* the join key: trimmed, whitespace-collapsed, case-folded, so "Somchai ",
+   "somchai" and "Somchai" do not become three different patients */
 const playerKey = n => (n||'').trim().replace(/\s+/g,' ').toLowerCase();
-const RAD = d => d*Math.PI/180;
+
+function shuffle(a){ const r=[...a];
+  for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; }
+  return r; }
 
 /* localStorage can throw (private mode, sandboxed iframe) → fall back to RAM */
 const store = (()=>{
@@ -317,30 +328,26 @@ const store = (()=>{
 })();
 const readRows = k => { try{ return JSON.parse(store.get(k) || '[]'); }catch(e){ return []; } };
 
-function shuffle(a){ const r=[...a];
-  for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; }
-  return r; }
-
 /* =========================================================================
-   2. ELEMENTS + STATE
+   3. ELEMENTS + STATE
    ========================================================================= */
 const video  = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
-const topBar = document.getElementById('topBar');
 
 const G = {
-  screen:'start',        // start | form | pinch | calib | tutorial | play | end
-  fit:'fill',
+  screen:'start',            // start | form | pinch | calib | tutorial | play | end
+  fit:'fill', theme:'camera',
   W:0, H:0, s:1, fps:60,
-  aiState:'idle', camMsg:null,
-  baskets:[], balls:[], held:null, hover:null, grabOff:{x:0,y:0},
-  wave:0, wavesTotal:CFG.WAVES_DEFAULT, waveT0:0, waveLastDrop:0,
-  phase:'gap', gapUntil:0,        // 'live' = balls in play, 'gap' = between waves
-  wSeq:[], collected:0, collectedTotal:0,
-  omit:{ left:0, right:0 }, firstTouchSide:[],
+  aiState:'idle',
+  boxes:[], balls:[], held:null, hover:null, grabOff:{x:0,y:0},
+  stages:[], stageMode:'zone', wavesPerStage:2,
+  wave:0, wavesTotal:0, wSeq:[], phase:'gap', gapUntil:0,
+  waveT0:0, waveLastDrop:0, spawnShort:0,
+  collected:0, collectedTotal:0, attempted:0,
+  omit:{left:0,right:0},
   banner:null, particles:[], endHold:0, hoverSince:0, lockedUntil:0,
-  gripMode:'mixed', side:'right'
+  gripMode:'mixed', side:'right', prescribed:[]
 };
 
 const P = { x:0,y:0, rx:0,ry:0, down:false, prevDown:false, pressed:false, released:false,
@@ -349,7 +356,7 @@ const HAND = { landmarks:null, lastSeen:0, acquiredAt:0, grabbing:false,
                pinchRatio:1.4, pinchEMA:1.4, curled:0, palm:0.8 };
 const MOUSE = { x:0, y:0, down:false, lastMove:-9999 };
 
-/* rolling aperture trace (~3 s). The hand opens BEFORE the grab is detected,
+/* Rolling aperture trace (~3 s). The hand opens BEFORE the grab is detected,
    so the opening phase can only be recovered by looking backwards. */
 const AP = {
   buf:[], cap:200,
@@ -358,39 +365,67 @@ const AP = {
 };
 
 /* =========================================================================
-   3. CAMERA + MEDIAPIPE (tasks-vision: one WASM fileset, two models)
+   4. THEMES
    ========================================================================= */
-let handLM = null, faceDet = null, stream = null, running = false;
-let lastHandTs = 0, lastFaceTs = 0, lastFaceRun = 0;
+const THEMES = {
+  camera:{ bg:null,      scrim:0.24, ink:'#ffffff', sub:'rgba(255,255,255,.75)',
+           dim:'rgba(255,255,255,.55)', line:'rgba(255,255,255,.35)',
+           outline:'rgba(255,255,255,.92)', well:'rgba(7,11,24,.62)',
+           good:'#34d399', warn:'#fbbf24', bad:'#fb7185', panelDark:true },
+  dark:  { bg:'#0b1020', scrim:0,    ink:'#f8fafc', sub:'rgba(248,250,252,.75)',
+           dim:'rgba(248,250,252,.5)', line:'rgba(255,255,255,.28)',
+           outline:'rgba(255,255,255,.92)', well:'rgba(2,6,23,.85)',
+           good:'#34d399', warn:'#fbbf24', bad:'#fb7185', panelDark:true },
+  light: { bg:'#eef2f7', scrim:0,    ink:'#0f172a', sub:'rgba(15,23,42,.72)',
+           dim:'rgba(15,23,42,.5)',  line:'rgba(15,23,42,.22)',
+           outline:'rgba(15,23,42,.88)', well:'rgba(255,255,255,.92)',
+           good:'#047857', warn:'#b45309', bad:'#be123c', panelDark:false }
+};
+const THEME_ORDER = ['camera','dark','light'];
+let T = THEMES.camera;
+function setTheme(key){
+  if (!THEMES[key]) key = 'camera';
+  G.theme = key; T = THEMES[key];
+  video.style.visibility = (key==='camera') ? 'visible' : 'hidden';
+  document.body.classList.toggle('lightui', key==='light');
+  store.set('ballbox.theme', key);
+}
+
+/* =========================================================================
+   5. CAMERA + MEDIAPIPE  (tasks-vision: one WASM fileset, two models)
+   ========================================================================= */
+const WASM       = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+
+let handLM=null, faceDet=null, stream=null, running=false;
+let lastHandTs=0, lastFaceTs=0, lastFaceRun=0;
 
 function cameraProblem(err){
   const n = (err && err.name) || '';
   if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia))
-    return { code:'insecure', th:'หน้านี้ไม่ได้เปิดผ่าน https',
+    return { th:'หน้านี้ไม่ได้เปิดผ่าน https',
              fix:'เบราว์เซอร์อนุญาตให้ใช้กล้องเฉพาะ https หรือ localhost เท่านั้น' };
   if (n==='NotAllowedError'||n==='SecurityError')
-    return { code:'denied', th:'เบราว์เซอร์ยังไม่อนุญาตให้ใช้กล้อง',
-             fix:'กดไอคอนกล้องบนแถบที่อยู่เว็บ แล้วเลือก "อนุญาต" จากนั้นกดลองใหม่' };
+    return { th:'เบราว์เซอร์ยังไม่อนุญาตให้ใช้กล้อง',
+             fix:'กดไอคอนกล้องบนแถบที่อยู่เว็บ เลือก "อนุญาต" แล้วกดลองใหม่' };
   if (n==='NotReadableError'||n==='TrackStartError'||n==='AbortError')
-    return { code:'busy', th:'เปิดกล้องไม่ได้ — กล้องอาจถูกโปรแกรมอื่นใช้อยู่',
-             fix:'ปิด Zoom / Teams / Meet หรือแท็บอื่นที่ใช้กล้อง เปิดฝาปิดเลนส์ แล้วกดลองใหม่' };
+    return { th:'เปิดกล้องไม่ได้ — กล้องอาจถูกโปรแกรมอื่นใช้อยู่',
+             fix:'ปิด Zoom / Teams / Meet หรือแท็บอื่นที่ใช้กล้อง เปิดฝาปิดเลนส์ แล้วลองใหม่' };
   if (n==='NotFoundError'||n==='DevicesNotFoundError')
-    return { code:'none', th:'ไม่พบกล้องในเครื่องนี้',
-             fix:'เสียบกล้องแล้วกดลองใหม่ หรือเล่นด้วยเมาส์ก็ได้' };
+    return { th:'ไม่พบกล้องในเครื่องนี้', fix:'เสียบกล้องแล้วกดลองใหม่ หรือเล่นด้วยเมาส์ก็ได้' };
   if (n==='OverconstrainedError'||n==='ConstraintNotSatisfiedError')
-    return { code:'constraint', th:'กล้องไม่รองรับความละเอียดที่ขอ',
-             fix:'ระบบจะลองความละเอียดต่ำลงให้อัตโนมัติ' };
+    return { th:'กล้องไม่รองรับความละเอียดที่ขอ', fix:'ระบบจะลองความละเอียดต่ำลงให้อัตโนมัติ' };
   if (n==='ScriptError')
-    return { code:'script', th:'โหลดโมเดล MediaPipe ไม่สำเร็จ',
-             fix:'ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต แล้วรีเฟรชหน้าเว็บ' };
-  return { code:'unknown', th:'เปิดกล้องไม่ได้', fix:'ลองรีเฟรชหน้าเว็บ หรือเล่นด้วยเมาส์แทน' };
+    return { th:'โหลดโมเดล MediaPipe ไม่สำเร็จ', fix:'ตรวจสอบอินเทอร์เน็ต แล้วรีเฟรชหน้าเว็บ' };
+  return { th:'เปิดกล้องไม่ได้', fix:'ลองรีเฟรชหน้าเว็บ หรือเล่นด้วยเมาส์แทน' };
 }
 
 /* Release every track. Without this a retry asks the driver for a device the
    page itself is still holding, which produces NotReadableError again. */
 function releaseCamera(){
   running = false;
-  if (stream){ stream.getTracks().forEach(t=>{ try{ t.stop(); }catch(e){} }); stream = null; }
+  if (stream){ stream.getTracks().forEach(t=>{ try{ t.stop(); }catch(e){} }); stream=null; }
   if (video.srcObject) video.srcObject = null;
 }
 
@@ -401,7 +436,7 @@ const CAM_TRIES = [
 ];
 async function openStream(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    const e = new Error('getUserMedia unavailable'); e.name = 'NotSupportedError'; throw e;
+    const e = new Error('getUserMedia unavailable'); e.name='NotSupportedError'; throw e;
   }
   let last;
   for (const c of CAM_TRIES){
@@ -409,7 +444,7 @@ async function openStream(){
     catch(err){
       last = err;
       if (err && (err.name==='NotAllowedError' || err.name==='SecurityError')) throw err;
-      await new Promise(r=>setTimeout(r, 350));
+      await new Promise(r=>setTimeout(r,350));
     }
   }
   throw last;
@@ -428,25 +463,25 @@ async function initVision(){
 
   if (!handLM){
     let fs;
-    try{ fs = await FilesetResolver.forVisionTasks(CFG.WASM); }
+    try{ fs = await FilesetResolver.forVisionTasks(WASM); }
     catch(e){ const err=new Error('wasm'); err.name='ScriptError'; throw err; }
-    /* GPU delegate is a big win but fails on some classroom drivers and
+
+    /* The GPU delegate is a large win but fails on some classroom drivers and
        inside remote-desktop sessions. Retry on CPU rather than losing the
-       whole session; the frame rate is logged either way. */
-    const mk = async (delegate)=>{
+       session; the frame rate is logged either way and the quality gate will
+       show if it dropped too far. */
+    const mk = async delegate => {
       handLM = await HandLandmarker.createFromOptions(fs, {
-        baseOptions:{ modelAssetPath:CFG.HAND_MODEL, delegate },
+        baseOptions:{ modelAssetPath:HAND_MODEL, delegate },
         runningMode:'VIDEO', numHands:1,
-        minHandDetectionConfidence:0.6, minTrackingConfidence:0.6
-      });
+        minHandDetectionConfidence:0.6, minTrackingConfidence:0.6 });
       faceDet = await FaceDetector.createFromOptions(fs, {
-        baseOptions:{ modelAssetPath:CFG.FACE_MODEL, delegate },
-        runningMode:'VIDEO', minDetectionConfidence:0.5
-      });
+        baseOptions:{ modelAssetPath:FACE_MODEL, delegate },
+        runningMode:'VIDEO', minDetectionConfidence:0.5 });
     };
     try{ await mk('GPU'); }
     catch(e){
-      handLM = null; faceDet = null;
+      handLM=null; faceDet=null;
       try{ await mk('CPU'); }
       catch(e2){ const err=new Error('model'); err.name='ScriptError'; throw err; }
     }
@@ -454,26 +489,25 @@ async function initVision(){
 
   stream.getVideoTracks().forEach(t=>{
     t.onended = ()=>{ if (G.aiState==='ready'){ G.aiState='lost';
-      G.camMsg = { th:'กล้องหยุดทำงาน', fix:'อาจถูกโปรแกรมอื่นแย่งใช้ กดลองใหม่ได้' }; } };
+      showCamProblem({ th:'กล้องหยุดทำงาน', fix:'อาจถูกโปรแกรมอื่นแย่งใช้ กดลองใหม่ได้' }); } };
   });
 
-  running = true;
-  G.aiState = 'ready'; G.camMsg = null;
-  resize();
+  running = true; G.aiState='ready'; hideCamProblem(); resize();
 }
 
-/* Inference is pulled from the draw loop, not pushed by a callback: one
-   timeline, no chance of the two disagreeing about "now". */
+/* Inference is PULLED from the draw loop rather than pushed by a callback:
+   one timeline, so the landmarks and the frame can never disagree about
+   "now". */
 function pumpVision(now){
   if (!running || !handLM || video.readyState < 2) return;
 
-  const ts = Math.max(lastHandTs + 1, Math.round(now));
+  const ts = Math.max(lastHandTs+1, Math.round(now));
   lastHandTs = ts;
   let res = null;
   try{ res = handLM.detectForVideo(video, ts); }catch(e){ return; }
 
   if (res && res.landmarks && res.landmarks.length){
-    if (!HAND.landmarks || now - HAND.lastSeen > 400){
+    if (!HAND.landmarks || now-HAND.lastSeen > 400){
       HAND.acquiredAt = now; HAND.pinchEMA = 1.4; HAND.grabbing = false;
     }
     HAND.landmarks = res.landmarks[0];
@@ -483,47 +517,51 @@ function pumpVision(now){
     HAND.landmarks = null; HAND.grabbing = false;
   }
 
-  if (faceDet && now - lastFaceRun > 1000/CFG.FACE_HZ){
+  if (faceDet && now - lastFaceRun > 1000/CF('body.faceHz',4)){
     lastFaceRun = now;
-    const fts = Math.max(lastFaceTs + 1, Math.round(now));
+    const fts = Math.max(lastFaceTs+1, Math.round(now));
     lastFaceTs = fts;
     try{ BODY.ingest(faceDet.detectForVideo(video, fts), now); }catch(e){}
   }
 }
 
-/* ---- gesture: forgiving pinch + fist, with hysteresis ---- */
+/* ---- gesture ---- */
 const d2 = (a,b)=> Math.hypot(a.x-b.x, a.y-b.y);
 
 /* Aperture is a 2D measure. Turn the hand edge-on and the thumb–index gap
    foreshortens, reading falsely small. The MCP-knuckle span collapses in the
-   same situation, so it doubles as a validity flag (~0.8 palm-on, ~0.25 edge-on). */
-const palmFacing = lm => d2(lm[5], lm[17]) / Math.max(1e-4, d2(lm[0], lm[9]));
+   same situation, so it doubles as a validity flag (~0.8 palm-on, ~0.25
+   edge-on). */
+const palmFacing = lm => d2(lm[5],lm[17]) / Math.max(1e-4, d2(lm[0],lm[9]));
 
 function updateGesture(lm, now){
-  const palm = Math.max(1e-4, d2(lm[0], lm[9]));
-  const raw  = d2(lm[4], lm[8]) / palm;
-  HAND.pinchEMA += (raw - HAND.pinchEMA) * 0.5;
+  const palm = Math.max(1e-4, d2(lm[0],lm[9]));
+  const raw  = d2(lm[4],lm[8]) / palm;
+  HAND.pinchEMA += (raw - HAND.pinchEMA)*0.5;
   HAND.pinchRatio = HAND.pinchEMA;
 
   const tips=[8,12,16,20], pips=[6,10,14,18];
   let curled=0, extended=0;
   for (let i=0;i<4;i++){
-    if (d2(lm[tips[i]], lm[0]) < d2(lm[pips[i]], lm[0]) * 1.03) curled++; else extended++;
+    if (d2(lm[tips[i]],lm[0]) < d2(lm[pips[i]],lm[0])*1.03) curled++; else extended++;
   }
   HAND.curled = curled;
   HAND.palm   = palmFacing(lm);
   AP.push(now, HAND.pinchRatio, HAND.palm);
 
-  if (now - HAND.acquiredAt < 250){ HAND.grabbing = false; return; }   // tracker not settled
+  if (now - HAND.acquiredAt < 250){ HAND.grabbing = false; return; }  // tracker unsettled
+
   const on = HAND.grabbing;
-  const isPinch  = HAND.pinchRatio < (on ? 0.90 : CFG.GRIP_CLOSE);
-  const isFist   = curled >= (on ? 2 : 3);
-  const isSpread = extended >= 4 && HAND.pinchRatio > CFG.GRIP_OPEN;
+  const closeTh = CF('grip.close',0.62), openTh = CF('grip.open',0.95);
+  const fistN   = CF('grip.fistFingers',3);
+  const isPinch  = HAND.pinchRatio < (on ? 0.90 : closeTh);
+  const isFist   = curled >= (on ? Math.max(1,fistN-1) : fistN);
+  const isSpread = extended >= 4 && HAND.pinchRatio > openTh;
   HAND.grabbing = isSpread ? false : (isPinch || isFist);
 }
 
 /* =========================================================================
-   4. VIEW GEOMETRY
+   6. VIEW GEOMETRY
    ========================================================================= */
 function videoRect(){
   const vw = video.videoWidth, vh = video.videoHeight;
@@ -531,47 +569,48 @@ function videoRect(){
   const va = vw/vh, ca = G.W/G.H;
   /* 'fill' = always fill the HEIGHT and crop the sides. That keeps the full
      vertical view — where hands enter and leave — on a 4:3 camera in a wide
-     window, instead of cropping top and bottom the way CSS cover would. It is
-     a distinct mode from 'cover', not a synonym for it. */
+     window, instead of cropping top and bottom the way cover would. It is a
+     distinct mode from 'cover', not a synonym for it. */
   if (G.fit === 'fill'){ const dh=G.H, dw=G.H*va; return { x:(G.W-dw)/2, y:0, w:dw, h:dh }; }
   const fillHeight = (G.fit==='cover') ? (va > ca) : (va < ca);
   const dh = fillHeight ? G.H : G.W/va;
   const dw = fillHeight ? G.H*va : G.W;
   return { x:(G.W-dw)/2, y:(G.H-dh)/2, w:dw, h:dh };
 }
-/* Where a hand can be SEEN and DRAWN. Every hand-operable thing must sit
-   inside this: a button in a letterbox bar is unreachable by hand even
-   though a mouse can click it. */
-function reachRect(){
-  const v = videoRect();
-  const x0 = Math.max(0, v.x), y0 = Math.max(0, v.y);
-  const x1 = Math.min(G.W, v.x+v.w), y1 = Math.min(G.H, v.y+v.h);
-  return { x:x0, y:y0, w:Math.max(40, x1-x0), h:Math.max(40, y1-y0) };
-}
-/* normalised landmark → canvas px (mirrored, so patient-right = screen-right) */
-function mapPoint(nx, ny){
-  const r = videoRect();
-  return { x: r.x + (1-nx)*r.w, y: r.y + ny*r.h };
-}
+
 /* The single place the video element's geometry is set. Everything that maps
    between camera space and screen space goes through videoRect(), so the
    painted frame and the drawn overlay cannot disagree. */
 function applyVideoLayout(){
   const r = videoRect();
-  video.style.left   = r.x + 'px';
-  video.style.top    = r.y + 'px';
-  video.style.width  = r.w + 'px';
-  video.style.height = r.h + 'px';
+  video.style.left   = r.x+'px';
+  video.style.top    = r.y+'px';
+  video.style.width  = r.w+'px';
+  video.style.height = r.h+'px';
+}
+
+/* Where a hand can be SEEN and DRAWN. Every hand-operable control must sit
+   inside this: a button in a letterbox bar is unreachable by hand even though
+   a mouse can click it. */
+function reachRect(){
+  const v = videoRect();
+  const x0 = Math.max(0,v.x), y0 = Math.max(0,v.y);
+  const x1 = Math.min(G.W, v.x+v.w), y1 = Math.min(G.H, v.y+v.h);
+  return { x:x0, y:y0, w:Math.max(40,x1-x0), h:Math.max(40,y1-y0) };
+}
+
+/* normalised landmark → canvas px. Mirrored, so patient-right = screen-right. */
+function mapPoint(nx, ny){
+  const r = videoRect();
+  return { x: r.x + (1-nx)*r.w, y: r.y + ny*r.h };
 }
 
 const FITS = ['fill','contain','cover'];
 const FIT_LABEL = { fill:'พอดีความสูง', contain:'เต็มภาพ', cover:'เต็มจอ' };
 function setFit(mode){
-  if (FITS.indexOf(mode) < 0) mode = 'fill';
+  if (FITS.indexOf(mode) < 0) mode='fill';
   G.fit = mode;
-  store.set('basket.fit', mode);
-  const b = document.getElementById('btnFit');
-  if (b) b.textContent = 'มุมมอง: ' + FIT_LABEL[mode];
+  store.set('ballbox.fit', mode);
   resize();
 }
 function resize(){
@@ -582,57 +621,51 @@ function resize(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   applyVideoLayout();
   G.s = Math.max(0.55, Math.min(G.W/1100, G.H/760));
-  if (G.screen==='play') layoutBaskets();
+  if (G.screen==='play') layoutBoxes();
 }
 window.addEventListener('resize', resize);
-/* videoWidth is 0 until the first frame is decoded, so the initial resize()
-   lays out against a placeholder aspect. Re-run it the moment the real
-   dimensions land, and again if the camera is swapped mid-session. */
+/* videoWidth is 0 until the first frame decodes, so the initial resize() lays
+   out against a placeholder aspect. Re-run when the real dimensions land. */
 video.addEventListener('loadedmetadata', resize);
 video.addEventListener('resize', resize);
 
 /* =========================================================================
-   5. BODY MODEL — face-derived midline, scale, head yaw, trunk excursion
+   7. BODY MODEL — face-derived midline, scale, head yaw, trunk excursion
    -------------------------------------------------------------------------
-   Two midlines on purpose:
+   Two midlines, on purpose:
      live   → follows the patient as they shift in the chair. Used to place
-              baskets, because head turn is noise there.
-     frozen → captured at session start. Used for the neglect side split,
-              because in neglect the head habitually turns to the ipsilesional
-              side — define the midline from a moving head and you cancel out
-              the very asymmetry you are trying to detect.
+              boxes, because head turn is noise there.
+     frozen → captured once, at the start. Used for the neglect side split,
+              because in hemispatial neglect the head habitually turns to the
+              ipsilesional side: define the midline from a moving head and you
+              cancel out the very asymmetry you are trying to detect.
    ========================================================================= */
 const BODY = {
-  ok:false, lastSeen:0,
-  midX:null, eyeY:null, ipd:null, yaw:0,
-  frozenMidX:null, frozen:false, freezeBuf:[],
-  rest:null,                    // {x,y,ipd} baseline for trunk excursion
-  R:null, rSource:'none',
-  profile:[],                   // reach envelope per angle bin
+  ok:false, lastSeen:0, midX:null, eyeY:null, ipd:null, yaw:0,
+  frozenMidX:null, frozen:false, freezeBuf:[], rest:null,
+  R:null, rSource:'none', profile:[],
 
   ingest(res, now){
     const d = res && res.detections && res.detections[0];
     if (!d || !d.keypoints || d.keypoints.length < 6) return;
 
-    /* BlazeFace keypoint order: rightEye, leftEye, noseTip, mouth,
-       rightEarTragion, leftEarTragion — in IMAGE space, so "right" is the
-       image's right. We only use them symmetrically, so it does not matter. */
-    const k = d.keypoints.map(p=>mapPoint(p.x, p.y));
+    /* BlazeFace keypoints: rightEye, leftEye, noseTip, mouth, rightEarTragion,
+       leftEarTragion — in IMAGE space. Only used symmetrically, so which
+       "right" is meant does not matter. */
+    const k = d.keypoints.map(p=>mapPoint(p.x,p.y));
     const eyeA=k[0], eyeB=k[1], nose=k[2], earA=k[4], earB=k[5];
 
     const ipd = Math.hypot(eyeA.x-eyeB.x, eyeA.y-eyeB.y);
-    if (!(ipd > 4)) return;                       // implausible → ignore frame
+    if (!(ipd > 4)) return;                       // implausible → drop the frame
 
-    const midX = (eyeA.x+eyeB.x)/2, eyeY = (eyeA.y+eyeB.y)/2;
-    /* yaw proxy from tragion asymmetry: 0 facing camera, ±1 turned hard */
+    const midX=(eyeA.x+eyeB.x)/2, eyeY=(eyeA.y+eyeB.y)/2;
+    /* yaw proxy from tragion asymmetry: 0 facing the camera, ±1 turned hard */
     const yaw = (Math.hypot(nose.x-earA.x, nose.y-earA.y) -
                  Math.hypot(nose.x-earB.x, nose.y-earB.y)) / ipd;
 
-    this.ipd = ipd; this.eyeY = eyeY; this.yaw = yaw;
-    this.lastSeen = now; this.ok = true;
-    /* a hard head turn foreshortens the face: don't move the working midline */
-    if (Math.abs(yaw) < CFG.YAW_GATE) this.midX = midX;
-    else if (this.midX === null) this.midX = midX;
+    this.ipd=ipd; this.eyeY=eyeY; this.yaw=yaw; this.lastSeen=now; this.ok=true;
+    /* a hard head turn foreshortens the face — do not move the working midline */
+    if (Math.abs(yaw) < CF('body.yawGate',0.55) || this.midX===null) this.midX = midX;
 
     if (!this.frozen){
       this.freezeBuf.push(midX);
@@ -641,62 +674,59 @@ const BODY = {
     if (!this.rest) this.rest = { x:midX, y:eyeY, ipd };
   },
 
-  /* call once, while the patient is looking at the tutorial and still */
+  /* called once, while the patient is still and facing forward */
   freeze(){
-    if (this.freezeBuf.length >= 6){
-      this.frozenMidX = med(this.freezeBuf); this.frozen = true;
-    }
+    if (this.freezeBuf.length >= 6){ this.frozenMidX = med(this.freezeBuf); this.frozen = true; }
     if (this.ok) this.rest = { x:this.midX, y:this.eyeY, ipd:this.ipd };
   },
 
-  fresh(now){ return this.ok && (now - this.lastSeen) < CFG.FACE_STALE_MS; },
-  cmPerPx(){ return this.ipd ? CFG.ASSUMED_IPD_CM / this.ipd : null; },
+  fresh(now){ return this.ok && (now-this.lastSeen) < FACE_STALE_MS; },
+  cmPerPx(){ return this.ipd ? CF('body.assumedIpdCm',6.3)/this.ipd : null; },
 
-  /* movement origin ≈ suprasternal notch: below the eye line by a fixed
-     number of IPDs. Falls back to the centre of the reachable rect. */
+  /* movement origin ≈ suprasternal notch: a fixed number of IPDs below the
+     eye line. Falls back to the centre-bottom of the visible area. */
   origin(){
     const rr = reachRect();
-    if (this.ok && this.ipd && this.midX !== null){
+    if (this.ok && this.ipd && this.midX!==null){
       return { x: clamp(this.midX, rr.x, rr.x+rr.w),
-               y: clamp(this.eyeY + CFG.SHOULDER_DROP_IPD*this.ipd, rr.y, rr.y+rr.h),
+               y: clamp(this.eyeY + CF('body.shoulderDropIpd',3.2)*this.ipd, rr.y, rr.y+rr.h),
                src:'face' };
     }
-    return { x: rr.x + rr.w/2, y: rr.y + rr.h*0.92, src:'fallback' };
+    return { x: rr.x+rr.w/2, y: rr.y+rr.h*0.92, src:'fallback' };
   },
 
-  /* the split used for neglect: frozen if we have it, live otherwise */
+  /* the split used for the neglect measure: frozen if we have it */
   splitX(){ return this.frozen ? this.frozenMidX : this.origin().x; },
 
   /* Trunk excursion. The classic compensation for poor elbow extension is
-     leaning forward — invisible to a hand tracker, obvious to a face one.
-     Lateral/vertical convert to cm; depth only as a scale ratio, because
-     absolute depth needs a focal length we do not have. */
+     leaning the trunk forward — invisible to a hand tracker, obvious to a
+     face one. A patient whose reach distance improves while trunk_dx also
+     grows has not gained arm function; they have learned to lean.
+     Lateral and vertical convert to cm; depth is reported only as a scale
+     ratio, because absolute depth needs a focal length we do not have. */
   trunk(){
     if (!this.ok || !this.rest) return { dx:'', dy:'', scale:'' };
     const c = this.cmPerPx();
     return {
-      dx: c!=null ? +((this.midX - this.rest.x)*c).toFixed(1) : '',
-      dy: c!=null ? +((this.eyeY - this.rest.y)*c).toFixed(1) : '',
-      scale: +(this.ipd / this.rest.ipd).toFixed(3)
+      dx: c!=null ? +((this.midX-this.rest.x)*c).toFixed(1) : '',
+      dy: c!=null ? +((this.eyeY-this.rest.y)*c).toFixed(1) : '',
+      scale: +(this.ipd/this.rest.ipd).toFixed(3)
     };
   },
 
-  radius(){
-    if (this.R) return this.R;
-    return reachRect().h * CFG.R_FALLBACK;
-  }
+  radius(){ return this.R || reachRect().h * CF('body.rFallbackPct',0.42); }
 };
 
 /* =========================================================================
-   6. POINTER (hand ⇄ mouse arbitration)
+   8. POINTER (hand ⇄ mouse arbitration)
    ========================================================================= */
 function updatePointer(now, dt){
-  const handFresh  = HAND.landmarks && (now - HAND.lastSeen) < 400 && video.videoWidth > 0;
-  const mouseFresh = (now - MOUSE.lastMove) < 1200 || MOUSE.down;
+  const handFresh  = HAND.landmarks && (now-HAND.lastSeen) < 400 && video.videoWidth > 0;
+  const mouseFresh = (now-MOUSE.lastMove) < 1200 || MOUSE.down;
 
-  if (mouseFresh)      P.mode='mouse';
-  else if (handFresh)  P.mode='hand';
-  else                 P.mode='none';
+  if (mouseFresh)     P.mode='mouse';
+  else if (handFresh) P.mode='hand';
+  else                P.mode='none';
 
   if (P.mode==='hand'){
     const tip = mapPoint(HAND.landmarks[8].x, HAND.landmarks[8].y);
@@ -705,14 +735,12 @@ function updatePointer(now, dt){
     P.rx=MOUSE.x; P.ry=MOUSE.y; P.down=MOUSE.down; P.active=true;
   } else { P.down=false; P.active=false; }
 
-  if (P.mode !== P.lastMode){          // teleport, don't slide across the screen
-    P.x = P.rx; P.y = P.ry;
-    P.prevDown = P.down;
-    if (P.down) P.needRelease = true;  // entered mid-pinch → open the hand once
+  if (P.mode !== P.lastMode){            // teleport, don't slide across the screen
+    P.x=P.rx; P.y=P.ry; P.prevDown=P.down;
+    if (P.down) P.needRelease = true;    // entered mid-pinch → open the hand once
     P.lastMode = P.mode;
   }
-  const rate = P.mode==='hand' ? 20 : 34;
-  const k = 1 - Math.exp(-rate * dt/1000);
+  const k = 1 - Math.exp(-(P.mode==='hand'?20:34)*dt/1000);
   P.x += (P.rx-P.x)*k; P.y += (P.ry-P.y)*k;
 
   P.pressed  = P.down && !P.prevDown;
@@ -733,129 +761,234 @@ canvas.addEventListener('touchmove', e=>{ const t=e.touches[0]; MOUSE.x=t.client
 window.addEventListener('touchend',  ()=>{ MOUSE.down=false; MOUSE.lastMove=performance.now(); });
 
 /* =========================================================================
-   7. ZONES + BASKETS
+   9. SCORING
    -------------------------------------------------------------------------
-   Zones are prescribed by label and stored in body-relative polar
-   coordinates, so the same prescription reproduces across sessions even
-   though the patient sits differently and the screen size changes.
-   ========================================================================= */
-let PRESCRIBED = CFG.ZONES.filter(z=>z.on).map(z=>z.id);
+   Points come off THIS BALL's value, never off the running total, so the
+   number the patient watches only ever goes up.
 
-const sideSign = ()=> (G.side === 'left' ? -1 : 1);   // +1 = ipsilateral is screen-right
+   A ball dropped in mid-air is never penalised. Losing your grip is the
+   impairment being treated; charging the patient for it would score the
+   diagnosis. Only a deliberate release into the WRONG box costs points.
+   ========================================================================= */
+const SCORE = {
+  total:0, streak:0, bonuses:0, maxPossible:0, wrongTotal:0, firstTry:0, placed:0, attempts:0,
+
+  base(tier){ return CF('game.pointsByTier',{})[tier] || 80; },
+  floorOf(tier){ return Math.round(this.base(tier) * CF('game.floorPct',0.4)); },
+  sizeMult(w){
+    const m = CF('game.boxSizeBonus',{});
+    const k = String(+(+w).toFixed(2)).replace(/\.00$/,'');
+    return m[k] ?? m[String(w)] ?? 1;
+  },
+  /* what this ball is worth right now, given the wrong-box drops so far */
+  value(tier, wrong, w){
+    const v = Math.max(this.floorOf(tier), this.base(tier) - wrong*CF('game.wrongBoxPenalty',20));
+    return Math.max(1, Math.round(v * this.sizeMult(w)));
+  },
+  full(tier, w){ return Math.round(this.base(tier) * this.sizeMult(w)); },
+
+  award(tier, wrong, w){
+    const pts = this.value(tier, wrong, w);
+    let bonus = 0;
+    if (wrong === 0){
+      this.streak++; this.firstTry++;
+      const need = CF('game.streakLength',3);
+      if (need > 0 && this.streak % need === 0){
+        bonus = CF('game.streakBonus',25); this.bonuses += bonus;
+      }
+    }
+    /* a wrong box PAUSES the streak: the count is kept, not reset, so earlier
+       effort is never wiped out */
+    this.total += pts + bonus;
+    this.maxPossible += this.full(tier, w);
+    this.placed++; this.attempts++;
+    return { pts, bonus, streak:this.streak };
+  },
+  /* a ball that was picked up but never placed still counted as an attempt */
+  countAttempt(tier, w){ this.maxPossible += this.full(tier, w); this.attempts++; },
+
+  /* The ceiling has to include the streak bonuses a perfect run would earn,
+     or the bonuses push the total past 100% — exactly as the word game's
+     15-question maximum is 1200 points plus 125 of bonus, not 1200. */
+  maxBonus(){
+    const need = CF('game.streakLength',3);
+    return need>0 ? Math.floor(this.attempts/need) * CF('game.streakBonus',25) : 0;
+  },
+  ceiling(){ return this.maxPossible + this.maxBonus(); },
+  pct(){ const c = this.ceiling(); return c ? Math.round(this.total/c*100) : null; },
+  reset(){ this.total=0; this.streak=0; this.bonuses=0; this.maxPossible=0;
+           this.wrongTotal=0; this.firstTry=0; this.placed=0; this.attempts=0; }
+};
+
+/* =========================================================================
+   10. ZONES → BOXES → STAGES
+   ========================================================================= */
+const sideSign = ()=> (G.side==='left' ? -1 : 1);   // +1 = ipsilateral is screen-right
 
 function zonePoint(z, o, R){
   const a = RAD(z.ang);
-  return { x: o.x + Math.cos(a)*z.rad*R*sideSign(),
-           y: o.y - Math.sin(a)*z.rad*R };
+  return { x: o.x + Math.cos(a)*z.rad*R*sideSign(), y: o.y - Math.sin(a)*z.rad*R };
 }
 
-function layoutBaskets(){
-  const o = BODY.origin(), R = BODY.radius(), rr = reachRect();
-  const wLevel = G.wSeq.length ? G.wSeq[G.wave % G.wSeq.length] : 1.0;
-  const br = CFG.BASKET_R_BASE * Math.min(rr.w, rr.h) * wLevel;
+function buildBoxes(){
+  const zones = ZONES.filter(z => G.prescribed.includes(z.id));
+  G.boxes = zones.map((z,i)=>({
+    zone:z.id, tier:z.tier, ci:i, x:0, y:0, r:20, wLevel:1, clamped:0, flash:0, fill:0
+  }));
+  layoutBoxes();
+}
 
-  G.baskets.forEach((b,i)=>{
-    const z = CFG.ZONES.find(z=>z.id===b.zone);
+function layoutBoxes(){
+  const o = BODY.origin(), R = BODY.radius(), rr = reachRect();
+  const wLevel = G.wSeq.length ? G.wSeq[Math.min(G.wave, G.wSeq.length-1)] : 1.0;
+  const br = BOX_R_BASE * Math.min(rr.w, rr.h) * wLevel;
+
+  G.boxes.forEach(b=>{
+    const z = ZONES.find(z=>z.id===b.zone);
     const p = zonePoint(z, o, R);
     const m = br + 8*G.s;
     const cx = clamp(p.x, rr.x+m, rr.x+rr.w-m);
-    const cy = clamp(p.y, rr.y+m+CFG.BAND_TOP*G.s, rr.y+rr.h-m-CFG.BAND_BOTTOM*G.s);
-    /* a clamped basket means the prescribed zone was not achievable on this
-       screen / at this reach — the OT needs to know, so it is logged */
-    b.clamped = (Math.abs(cx-p.x) > 2 || Math.abs(cy-p.y) > 2) ? 1 : 0;
-    b.x = cx; b.y = cy; b.r = br; b.wLevel = wLevel;
+    const cy = clamp(p.y, rr.y+m+BAND_TOP*G.s, rr.y+rr.h-m-BAND_BOTTOM*G.s);
+    /* a clamped box means the prescribed zone was not achievable on this
+       screen at this reach — the OT needs to know, so it is logged */
+    b.clamped = (Math.abs(cx-p.x)>2 || Math.abs(cy-p.y)>2) ? 1 : 0;
+    b.x=cx; b.y=cy; b.r=br; b.wLevel=wLevel;
   });
 }
 
-function buildBaskets(){
-  const zones = CFG.ZONES.filter(z=>PRESCRIBED.includes(z.id));
-  G.baskets = zones.map((z,i)=>({
-    zone:z.id, ci:i, x:0, y:0, r:20, wLevel:1, clamped:0, flash:0, fill:0
-  }));
-  layoutBaskets();
+/* Stages are the tiers actually present among the prescribed zones, ordered
+   near → mid → far. Tick three zones that all sit in one tier and you get one
+   stage — which is why the form shows the resulting count live. */
+function buildStagePlan(){
+  const tb = targetBoxes();
+  const present = TIER_ORDER.filter(t => tb.some(b=>b.tier===t));
+  G.stages = present.map((tier,i)=>({ tier, index:i }));
+  G.wavesTotal = Math.max(1, G.stages.length * G.wavesPerStage);
+
+  const levels = CF('game.boxWLevels',[1.0,0.7,0.5]);
+  G.wSeq = [];
+  if (G.stageMode === 'progressive'){
+    /* boxes shrink stage by stage: clearer as a game, but the Fitts slope
+       from these sessions is confounded with fatigue and must not be reported */
+    for (let w=0; w<G.wavesTotal; w++){
+      const st = Math.min(Math.floor(w/G.wavesPerStage), levels.length-1);
+      G.wSeq.push(levels[st]);
+    }
+  } else {
+    /* shuffled in blocks, so every width appears equally early and late */
+    while (G.wSeq.length < G.wavesTotal) G.wSeq = G.wSeq.concat(shuffle(levels));
+    G.wSeq = G.wSeq.slice(0, G.wavesTotal);
+  }
 }
+const stageOf = w => G.stages[Math.min(Math.floor(w/G.wavesPerStage), G.stages.length-1)]
+                     || { tier:'mid', index:0 };
 
 /* =========================================================================
-   8. WAVES + BALLS
+   11. WAVES + BALLS
    -------------------------------------------------------------------------
-   Balls spawn in MIRRORED PAIRS about the (frozen) midline, matched for
-   radius, so any left/right difference in collection is about the patient
-   and not about the layout. The wave deliberately ends before every ball is
-   collected: with no possibility of omission there is no omission to measure.
+   Balls spawn in MIRRORED PAIRS about the frozen midline, matched for radius
+   and size, so any left/right difference in collection is about the patient
+   and not about the layout. The wave ends BEFORE every ball is collected on
+   purpose: with no possibility of omission there is no omission to measure.
    ========================================================================= */
-function ballRadius(){
+function ballSize(){
   const rr = reachRect(), base = Math.min(rr.w, rr.h);
-  const mode = G.gripMode === 'mixed' ? (Math.random()<0.5 ? 'small':'large') : G.gripMode;
-  return { r: CFG.BALL_R[mode]*base, grip:mode };
+  const mode = G.gripMode==='mixed' ? (Math.random()<0.5?'small':'large') : G.gripMode;
+  return { r: BALL_R[mode]*base, grip:mode };
 }
 
-function freeSpot(x, y, r, others, relax){
+function freeSpot(x,y,r,others,relax){
   const rr = reachRect(), m = r + 6*G.s;
-  const top = rr.y + m + CFG.BAND_TOP*G.s, bot = rr.y + rr.h - m - CFG.BAND_BOTTOM*G.s;
+  const top = rr.y + m + BAND_TOP*G.s, bot = rr.y + rr.h - m - BAND_BOTTOM*G.s;
   if (x < rr.x+m || x > rr.x+rr.w-m || y < top || y > bot) return false;
-  for (const b of G.baskets) if (Math.hypot(x-b.x, y-b.y) < b.r + r + 16*G.s*relax) return false;
-  for (const o of others)    if (Math.hypot(x-o.x, y-o.y) < o.r + r + 14*G.s*relax) return false;
+  for (const b of G.boxes)  if (Math.hypot(x-b.x,y-b.y) < b.r + r + 16*G.s*relax) return false;
+  for (const o of others)   if (Math.hypot(x-o.x,y-o.y) < o.r + r + 14*G.s*relax) return false;
   return true;
 }
 
-/* Balls spawn in the NEAR field; baskets sit out in the prescribed zones
-   (0.38–0.95 R). Keeping the two radial bands apart means every transport is
-   an outward reach into the zone the OT actually prescribed — if balls could
-   spawn beyond their basket, half the movements would be reaching back
-   towards the body and the zone label would stop describing the movement.
-   It costs some Fitts D range; the basket zones and the W levels supply it. */
+/* Balls spawn in the NEAR field; boxes sit out in the prescribed zones. Keeping
+   the two radial bands apart makes every transport an outward reach into the
+   zone the OT prescribed — if balls could spawn beyond their box, half the
+   movements would be reaching back towards the body and the zone label would
+   stop describing the movement. It costs some Fitts D range; the zones and the
+   width levels supply it. */
+/* The spawn band must stay clear of the NEAREST prescribed zone, not just of
+   a fixed radius. Prescribe near_low (0.38 R) alongside a full-size box and a
+   fixed 0.15–0.48 band overlaps it: the ball spawns almost on top of its own
+   target, 2D/W lands just above 1, and the index of difficulty collapses to
+   ~0.4 bits — a "movement" that is really a nudge. Deriving the ceiling from
+   the prescription keeps the two radial bands separate whatever the OT ticks. */
+function spawnBand(){
+  /* Measured from where the boxes ACTUALLY ended up, not from the prescribed
+     radius. On a small or portrait screen a far zone gets clamped inwards, and
+     a band derived from the prescription would then overlap a box that has
+     moved. Clamping is already logged per box; this keeps it from silently
+     corrupting the spawn geometry as well. */
+  const o = BODY.origin(), R = Math.max(1, BODY.radius());
+  const nearest = Math.min(...targetBoxes().map(b=>{
+    const d = Math.hypot(b.x-o.x, b.y-o.y);
+    return (d - b.r*1.2) / R;                 // clear of the mouth, not just the centre
+  }));
+  let hi = Math.min(SPAWN_R[1], nearest - 0.10);
+  let lo = SPAWN_R[0];
+  if (hi <= lo){ hi = Math.max(0.06, nearest*0.55); lo = Math.min(lo, hi*0.6); }
+  return [Math.max(0.04, lo), Math.max(0.06, hi)];
+}
+
 function spawnWave(){
   const o = BODY.origin(), R = BODY.radius(), split = BODY.splitX();
-  const placed = [];
-  const pairs  = [];
+  const band = spawnBand();
+  const stage = stageOf(G.wave);
+  const tb = targetBoxes();
+  const targets = tb.filter(b=>b.tier===stage.tier);
+  const pool = targets.length ? targets : tb;           // never leave a wave targetless
 
-  for (let i=0;i<CFG.PAIRS_PER_WAVE;i++){
-    let got = null;
-    /* relaxation ladder: a tight layout on a small screen with 5 baskets can
+  const placed=[], pairs=[];
+  for (let i=0;i<CF('game.pairsPerWave',3);i++){
+    let got=null;
+    /* relaxation ladder: a tight layout on a small screen with five boxes can
        make the ideal spacing impossible. Loosen rather than silently spawn a
-       short wave — a short wave has no omissions left over, which would quietly
+       short wave — a short wave leaves no omissions, which would quietly
        disable the neglect measure. */
-    for (const relax of [1, 0.6, 0.3]){
+    for (const relax of [1,0.6,0.3]){
       for (let k=0;k<120 && !got;k++){
-        const ang = RAD(CFG.SPAWN_ANG[0] + Math.random()*(CFG.SPAWN_ANG[1]-CFG.SPAWN_ANG[0]));
-        const fr  = CFG.SPAWN_R[0] + Math.random()*(CFG.SPAWN_R[1]-CFG.SPAWN_R[0]);
-        const sz  = ballRadius();
+        const ang = RAD(SPAWN_ANG[0] + Math.random()*(SPAWN_ANG[1]-SPAWN_ANG[0]));
+        const fr  = band[0] + Math.random()*(band[1]-band[0]);
+        const sz  = ballSize();
         const dx  = Math.cos(ang)*fr*R, dy = -Math.sin(ang)*fr*R;
-        if (dx < sz.r + 12*G.s) continue;            // keep the pair off each other
-        const a = { x: split + dx, y: o.y + dy, r:sz.r, grip:sz.grip, side:'right' };
-        const b = { x: split - dx, y: o.y + dy, r:sz.r, grip:sz.grip, side:'left'  };
+        if (dx < sz.r + 12*G.s) continue;               // keep the pair off each other
+        const a = { x:split+dx, y:o.y+dy, r:sz.r, grip:sz.grip, side:'right' };
+        const b = { x:split-dx, y:o.y+dy, r:sz.r, grip:sz.grip, side:'left'  };
         if (freeSpot(a.x,a.y,a.r,placed,relax) && freeSpot(b.x,b.y,b.r,placed,relax)){
-          placed.push(a,b); got = [a,b];
+          placed.push(a,b); got=[a,b];
         }
       }
       if (got) break;
     }
     if (got) pairs.push(got);
   }
-  G.spawnShort = CFG.PAIRS_PER_WAVE - pairs.length;   // logged, not swallowed
+  G.spawnShort = CF('game.pairsPerWave',3) - pairs.length;
 
-  /* Assign a target basket per ball. Colours are matched within a pair so the
-     two sides are equally easy; D is measured after the fact rather than
-     prescribed, which is what the Fitts regression wants anyway. */
   G.balls = [];
   let id = 0;
-  pairs.forEach((pair, pi)=>{
-    /* Rotate targets across waves so every zone is trained, but skip any
-       basket the ball has effectively spawned inside — a transport with
-       D < W is not a reach and its Fitts ID is undefined. */
-    let bi = (pi + G.wave) % G.baskets.length;
-    for (let t=0;t<G.baskets.length;t++){
-      const cand = G.baskets[(bi+t) % G.baskets.length];
+  pairs.forEach((pair,pi)=>{
+    /* Rotate targets so every box in the tier gets used, but skip any box the
+       ball has effectively spawned inside: a transport with D < W is not a
+       reach and its index of difficulty is undefined. */
+    let bi = (pi + G.wave) % pool.length, chosen = null, bestScore = -Infinity;
+    for (let t=0;t<pool.length;t++){
+      const cand = pool[(bi+t)%pool.length];
       const dmin = Math.min(...pair.map(p=>Math.hypot(p.x-cand.x, p.y-cand.y)));
-      if (dmin > cand.r*1.4){ bi = (bi+t) % G.baskets.length; break; }
+      if (dmin > cand.r*1.6){ chosen = cand; break; }
+      /* nothing cleanly separated — fall back to the FURTHEST box rather than
+         whichever happened to come first in the rotation */
+      if (dmin - cand.r*1.6 > bestScore){ bestScore = dmin - cand.r*1.6; chosen = cand; }
     }
     pair.forEach(p=>{
-      const basket = G.baskets[bi];
-      const D = Math.hypot(p.x-basket.x, p.y-basket.y);
       G.balls.push({
         id:id++, x:p.x, y:p.y, tx:p.x, ty:p.y, spawnX:p.x, spawnY:p.y,
-        r:p.r, grip:p.grip, side:p.side, ci:basket.ci, target:basket.zone,
-        D, W:basket.r*2, done:false, pop:1, wrong:0, lift:0
+        r:p.r, grip:p.grip, side:p.side, ci:chosen.ci, tier:chosen.tier,
+        wrong:0, touched:false, done:false, pop:1, flashWrong:0, lift:0
       });
     });
   });
@@ -863,69 +996,90 @@ function spawnWave(){
   G.collected = 0;
   G.waveT0 = performance.now();
   G.waveLastDrop = G.waveT0;
-  G.held = null; G.hover = null;
+  G.held=null; G.hover=null;
   RE.reset(performance.now());
 }
 
 /* The gap between waves is driven by the game loop, not setTimeout. A
-   backgrounded tab pauses rAF but keeps firing timers, which would otherwise
-   spawn the next wave against state the loop has not caught up with — and if
-   the timer were throttled away entirely the game would sit in a wave that
-   has already ended, re-triggering endWave on every frame with no live
-   STATS.wave to log into. `phase` makes that state explicit. */
+   backgrounded tab pauses rAF but keeps firing timers, which would spawn the
+   next wave against state the loop has not caught up with; and if the timer
+   were throttled away the game would sit in an ended wave, re-triggering
+   endWave every frame with no live STATS.wave to log into. */
 function endWave(reason){
-  if (G.phase !== 'live') return;                 // never end the same wave twice
+  if (G.phase !== 'live') return;
   G.phase = 'gap';
+
   const left  = G.balls.filter(b=>!b.done && b.side==='left').length;
   const right = G.balls.filter(b=>!b.done && b.side==='right').length;
   G.omit.left += left; G.omit.right += right;
-  STATS.logWave(reason, left, right);
+  /* balls that were picked up but never placed still count towards the
+     denominator; balls never touched do NOT — otherwise the omission design
+     would quietly become a scoring punishment for neglect */
+  G.balls.filter(b=>b.touched && !b.done)
+         .forEach(b=> SCORE.countAttempt(b.tier, boxOf(b.ci).wLevel));
 
+  STATS.logWave(reason, left, right);
   G.wave++;
   if (G.wave >= G.wavesTotal){ finishSession('finished'); return; }
-  G.banner = { text:`รอบที่ ${G.wave+1}`, sub:'เตรียมตัว', t:performance.now() };
+
+  const st = stageOf(G.wave);
+  G.banner = { text:`รอบที่ ${G.wave+1}`, sub:`ด่าน${TIER_TH[st.tier]}`, t:performance.now() };
   G.gapUntil = performance.now() + 1400;
 }
 function beginWave(){
-  G.phase = 'live';
-  layoutBaskets(); spawnWave(); STATS.startWave();
+  G.phase='live'; layoutBoxes(); spawnWave(); STATS.startWave();
 }
+const boxOf = ci => G.boxes.find(b=>b.ci===ci) || G.boxes[0];
+/* boxes that can actually receive balls (see near_low above) */
+const targetBoxes = ()=>{
+  const t = G.boxes.filter(b=>(ZONES.find(z=>z.id===b.zone)||{}).target !== false);
+  return t.length ? t : G.boxes;          // never leave the game targetless
+};
 
 /* =========================================================================
-   9. STATS — flat single sheet, one `type` column, shared with the word game
+   12. LOGGING
+   -------------------------------------------------------------------------
+   GitHub Pages is static, so rows are buffered locally and pushed to an Apps
+   Script endpoint. One flat table, distinguished by `type`.
+   Distances are normalised to % of screen height so different laptops
+   compare; `screen` keeps the raw pixel size for reference.
    ========================================================================= */
 const STATS = {
-  URL : CFG.STATS_URL,
-  QKEY:'basket.queue.v1', RKEY:'basket.rows.v1', NKEY:'rehab.names.v1',
-  session:null, wave:null
+  URL : CF('upload',true) ? CF('endpoint','') : '',
+  QKEY:'ballbox.queue.v1', RKEY:'ballbox.rows.v1', NKEY:'ballbox.names.v1',
+  session:null, wave:null, lastSid:'',
+  sync:{ state:'idle', pending:0, lastOk:null, lastErr:'', tries:0 }
 };
 const STAT_COLS = [
-  'type','game','ts','sid','player_key','display_name','note','side','posture',
-  'wave','block','mv',
+  'rid','type','game','ts','sid','player_key','display_name','note','side','posture',
+  'stage','stage_tier','stage_mode','wave','mv',
   /* movement — transport phase (grasp → release) */
-  'ball_color','basket_color','basket_zone','correct','drop_type',
+  'ball_color','box_color','box_zone','box_tier','correct','drop_type',
   'grasp','grasp_ms','move_ms','path_pct','dist_pct','path_ratio','peak_vel',
   'ttp_pct','submoves','drop_err_pct',
   'ap_max','ap_min','ap_exc','close_ms','release_ms','hold_sd','palm_face',
   /* movement — reach phase (previous release → grasp) */
-  'reach_ms','reach_path_pct','reach_d_pct','reach_submoves','fitts_id_reach',
-  /* Fitts */
-  'fitts_d_pct','fitts_w_pct','fitts_id','reach_d_cm','fitts_d_cm',
-  'ball_r_pct','ball_grip','spawn_side','basket_w_level','basket_clamped',
+  'reach_ms','reach_path_pct','reach_d_pct','reach_submoves','reach_d_cm','fitts_id_reach',
+  /* Fitts — transport */
+  'fitts_d_pct','fitts_w_pct','fitts_id','fitts_d_cm',
+  'ball_r_pct','ball_grip','spawn_side','box_w_level','box_clamped',
+  /* scoring */
+  'ball_points','ball_max','ball_wrong','bonus','streak','score',
   /* body */
   'trunk_dx_cm','trunk_dy_cm','trunk_scale','head_yaw','cm_per_px','ipd_px',
-  'origin_src','reach_R_pct','midline_frozen',
+  'origin_src','reach_R_pct','reach_R_cm','r_source','midline_frozen',
   /* wave / neglect */
-  'balls_spawned','balls_done','spawn_short','omit_left','omit_right','first_touch_side',
-  'wave_ms','end_reason',
-  /* pinch check */
-  'cycles','cycle_ms','grip_close_th','grip_open_th',
-  /* calibration */
+  'balls_spawned','balls_done','spawn_short','omit_left','omit_right',
+  'first_touch_side','wave_ms','end_reason',
+  /* pinch check + calibration */
+  'cycles','cycle_ms','grip_close_th','grip_open_th','fist_fingers',
   'calib_bins','calib_profile',
   /* session */
-  'waves_done','waves_total','balls_total','correct_total','wrong_total',
+  'waves_done','waves_total','waves_per_stage','stages_total',
+  'balls_total','correct_total','wrong_total','first_try_total',
+  'score_total','score_max','score_balls_max','score_pct','pct_first','bonuses',
   'duration_ms','no_hand_ms','ended_early','zones','grip_mode',
-  'input','fps_mean','fps_min','screen','ua','app'
+  'input','fps_mean','fps_min','screen','ua','app','gates'
 ];
 
 const PLAYER = { key:'', name:'', note:'', side:'', posture:'' };
@@ -938,26 +1092,33 @@ function rememberName(n){
 }
 
 STATS.start = function(){
-  this.session = { sid:uid(), t0:performance.now(), fps:[], correct:0, wrong:0, noHand:0 };
+  this.session = { sid:uid(), t0:performance.now(), fps:[], noHand:0 };
+  this.lastSid = this.session.sid;
+  SCORE.reset();
 };
 STATS.base = function(){
-  const s = this.session || {sid:''};
-  const t = BODY.trunk();
-  return { ts:new Date().toISOString(), sid:s.sid, game:CFG.GAME_ID,
+  const s = this.session || { sid:'' };
+  const t = BODY.trunk(), cm = BODY.cmPerPx();
+  return {
+    rid: uid(), ts:new Date().toISOString(), sid:s.sid, game:GAME_ID,
     player_key:PLAYER.key, display_name:PLAYER.name, note:PLAYER.note,
     side:PLAYER.side, posture:PLAYER.posture,
+    stage_mode:G.stageMode,
     trunk_dx_cm:t.dx, trunk_dy_cm:t.dy, trunk_scale:t.scale,
     head_yaw: BODY.ok ? +BODY.yaw.toFixed(3) : '',
-    cm_per_px: BODY.cmPerPx()!=null ? +BODY.cmPerPx().toFixed(4) : '',
+    cm_per_px: cm!=null ? +cm.toFixed(4) : '',
     ipd_px: BODY.ipd ? +BODY.ipd.toFixed(1) : '',
-    origin_src: BODY.origin().src, midline_frozen: BODY.frozen ? 1 : 0,
+    origin_src: BODY.origin().src, midline_frozen: BODY.frozen?1:0,
     reach_R_pct: +(BODY.radius()/G.H*100).toFixed(2),
-    screen:`${G.W}x${G.H}`, ua:navigator.userAgent.slice(0,110), app:CFG.APP_VER };
+    reach_R_cm : cm!=null ? +(BODY.radius()*cm).toFixed(1) : '',
+    r_source: BODY.rSource,
+    screen:`${G.W}x${G.H}`, ua:navigator.userAgent.slice(0,110), app:APP_VERSION
+  };
 };
 STATS.push = function(row){
   const full = Object.assign({}, this.base(), row);
   const q = readRows(this.QKEY); q.push(full); store.set(this.QKEY, JSON.stringify(q));
-  const a = readRows(this.RKEY); a.push(full); store.set(this.RKEY, JSON.stringify(a));
+  const a = readRows(this.RKEY); a.push(full); store.set(this.RKEY, JSON.stringify(a.slice(-4000)));
   this.flush();
 };
 STATS.startWave = function(){
@@ -966,13 +1127,15 @@ STATS.startWave = function(){
 };
 STATS.logWave = function(reason, omitL, omitR){
   const w = this.wave; if (!w || !this.session) return;
+  const st = stageOf(G.wave);
   this.push({
-    type:'round', wave:G.wave+1,
-    block: G.wSeq.length ? G.wSeq[G.wave % G.wSeq.length] : '',
+    type:'wave', wave:G.wave+1, stage:st.index+1, stage_tier:st.tier,
+    box_w_level: G.wSeq.length ? G.wSeq[Math.min(G.wave,G.wSeq.length-1)] : '',
     balls_spawned:G.balls.length, balls_done:w.done, spawn_short:G.spawnShort||0,
-    correct_total:w.correct, wrong_total:w.wrong, omit_left:omitL, omit_right:omitR,
-    first_touch_side:w.firstSide, wave_ms:Math.round(performance.now()-w.t0),
-    end_reason:reason, input: w.hand>w.mouse ? 'hand':'mouse',
+    correct_total:w.correct, wrong_total:w.wrong,
+    omit_left:omitL, omit_right:omitR, first_touch_side:w.firstSide,
+    wave_ms:Math.round(performance.now()-w.t0), end_reason:reason,
+    score:SCORE.total, input: w.hand>w.mouse?'hand':'mouse',
     no_hand_ms:Math.round(w.noHand),
     fps_mean: w.fpsN ? +(w.fpsSum/w.fpsN).toFixed(1) : '',
     fps_min : w.fpsMin<999 ? +w.fpsMin.toFixed(1) : ''
@@ -982,39 +1145,117 @@ STATS.logWave = function(reason, omitL, omitR){
 STATS.logMovement = function(m){
   const w = this.wave; if (!w || !this.session) return;
   w.mv++;
+  const st = stageOf(G.wave);
   this.push(Object.assign({ type:'movement', wave:G.wave+1, mv:w.mv,
-    block: G.wSeq.length ? G.wSeq[G.wave % G.wSeq.length] : '' }, m));
+    stage:st.index+1, stage_tier:st.tier }, m));
 };
 STATS.endSession = function(reason){
   const s = this.session; if (!s) return;
   const fps = s.fps;
   this.push({
-    type:'session', waves_done:G.wave, waves_total:G.wavesTotal,
-    balls_total:G.collectedTotal, correct_total:s.correct, wrong_total:s.wrong,
+    type:'session',
+    waves_done:G.wave, waves_total:G.wavesTotal, waves_per_stage:G.wavesPerStage,
+    stages_total:G.stages.length,
+    balls_total:G.collectedTotal, correct_total:SCORE.placed,
+    wrong_total:SCORE.wrongTotal, first_try_total:SCORE.firstTry,
+    pct_first: SCORE.placed ? Math.round(SCORE.firstTry/SCORE.placed*100) : '',
+    score_total:SCORE.total, score_max:SCORE.ceiling(), score_balls_max:SCORE.maxPossible,
+    score_pct: SCORE.pct() ?? '', bonuses:SCORE.bonuses,
     omit_left:G.omit.left, omit_right:G.omit.right,
     duration_ms:Math.round(performance.now()-s.t0),
-    ended_early: reason==='finished' ? 0 : 1, end_reason:reason||'',
-    zones:PRESCRIBED.join('|'), grip_mode:G.gripMode,
-    grip_close_th:CFG.GRIP_CLOSE, grip_open_th:CFG.GRIP_OPEN,
-    fps_mean: fps.length ? +(mean(fps)).toFixed(1) : '',
+    ended_early: reason==='finished'?0:1, end_reason:reason||'',
+    zones:G.prescribed.join('|'), grip_mode:G.gripMode,
+    grip_close_th:CF('grip.close',0.62), grip_open_th:CF('grip.open',0.95),
+    fist_fingers:CF('grip.fistFingers',3),
+    gates:JSON.stringify(CF('gates',{})),
+    fps_mean: fps.length ? +mean(fps).toFixed(1) : '',
     fps_min : fps.length ? +Math.min.apply(null,fps).toFixed(1) : ''
   });
   this.session = null;
   this.flush();
 };
-/* fire-and-forget: a no-cors POST cannot be read back, so delivery is never
-   confirmable — the local archive keeps a copy either way */
-STATS.flush = function(){
+
+/* ---------------------------------------------------------------------------
+   Delivery. A no-cors POST has an unreadable response, so a failed upload
+   looks exactly like a successful one — clearing the queue on send silently
+   loses rows. Instead:
+     · the queue is cleared only after the server confirms the write
+     · every row carries a rid, so a retry after an unconfirmed send is safe
+     · unsent rows survive a reload and go out on the next flush
+--------------------------------------------------------------------------- */
+STATS.pendingCount = function(){ return readRows(this.QKEY).length; };
+
+STATS.flush = async function(force){
+  const q = readRows(this.QKEY);
+  this.sync.pending = q.length;
+  if (!this.URL || !q.length){ this.sync.state = this.URL ? 'idle' : 'offline'; updateSyncChip(); return; }
+  if (this.sync.state === 'sending' && !force) return;
+
+  this.sync.state = 'sending'; updateSyncChip();
+  const batch = q.slice(0,400);
+  const body  = JSON.stringify({ rows:batch });
+  let ok=false, err='';
+
+  /* text/plain keeps this a "simple request" — no CORS preflight, which Apps
+     Script cannot answer — and the reply is readable */
+  try{
+    const r = await fetch(this.URL, { method:'POST', redirect:'follow',
+      headers:{'Content-Type':'text/plain;charset=UTF-8'}, body });
+    if (r.ok){ const j = await r.json(); ok = !!j.ok; if(!ok) err = j.error||'server refused'; }
+    else err = 'HTTP '+r.status;
+  }catch(e){ err = e.message || 'network'; }
+
+  /* if the reply was unreadable, send blind and VERIFY by asking for the rid */
+  if (!ok){
+    try{
+      await fetch(this.URL, { method:'POST', mode:'no-cors',
+        headers:{'Content-Type':'text/plain;charset=UTF-8'}, body });
+      ok = await this.verify(batch[batch.length-1].rid);
+      if (!ok) err = err || 'ส่งแล้วแต่ยืนยันไม่ได้';
+    }catch(e){ err = err || (e.message||'network'); }
+  }
+
+  if (ok){
+    const rest = readRows(this.QKEY).filter(r => !batch.some(b=>b.rid===r.rid));
+    store.set(this.QKEY, JSON.stringify(rest));
+    this.sync.pending = rest.length;
+    this.sync.state = rest.length ? 'idle' : 'ok';
+    this.sync.lastOk = Date.now(); this.sync.lastErr=''; this.sync.tries=0;
+    if (rest.length) setTimeout(()=>this.flush(true), 400);
+  } else {
+    this.sync.state='error'; this.sync.lastErr=err; this.sync.tries++;
+    const wait = Math.min(60000, 2000*Math.pow(2, Math.min(this.sync.tries,5)));
+    setTimeout(()=>this.flush(true), wait);            // keep the rows, retry
+  }
+  updateSyncChip();
+};
+
+/* ask the server whether a rid landed — JSONP is never blocked by CORS, so
+   this works even when the POST response itself is opaque */
+STATS.verify = function(rid){
+  return new Promise(res=>{
+    const cb = 'vcb_'+Math.random().toString(36).slice(2);
+    const el = document.createElement('script');
+    const t  = setTimeout(()=>done(false), 12000);
+    function done(v){ clearTimeout(t); delete window[cb]; el.remove(); res(v); }
+    window[cb] = d => done(!!(d && d.ok && d.found));
+    el.onerror = ()=>done(false);
+    const key = CF('readKey','');
+    el.src = this.URL + '?action=has&rid=' + encodeURIComponent(rid) +
+             (key ? '&key='+encodeURIComponent(key) : '') + '&callback=' + cb;
+    document.head.appendChild(el);
+  });
+};
+
+/* pagehide cannot await: a beacon is the only thing that survives, and the
+   rows stay queued so an unconfirmed send is retried next time */
+STATS.beacon = function(){
   if (!this.URL) return;
   const q = readRows(this.QKEY); if (!q.length) return;
-  const body = JSON.stringify({ rows:q });
-  let sent = false;
-  try{ sent = navigator.sendBeacon &&
-       navigator.sendBeacon(this.URL, new Blob([body],{type:'text/plain;charset=UTF-8'})); }catch(e){}
-  if (!sent) fetch(this.URL,{ method:'POST', mode:'no-cors',
-      headers:{'Content-Type':'text/plain;charset=UTF-8'}, body }).catch(()=>{});
-  store.set(this.QKEY,'[]');
+  try{ navigator.sendBeacon(this.URL,
+    new Blob([JSON.stringify({rows:q.slice(0,200)})],{type:'text/plain;charset=UTF-8'})); }catch(e){}
 };
+
 STATS.csv = function(){
   const rows = readRows(this.RKEY);
   const esc = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
@@ -1024,18 +1265,30 @@ STATS.csv = function(){
 STATS.download = function(){
   const url = URL.createObjectURL(new Blob([this.csv()],{type:'text/csv;charset=utf-8'}));
   const a = document.createElement('a');
-  a.href = url; a.download = `ball_basket_log_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  a.href=url; a.download=`ballbox_log_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-addEventListener('pagehide', ()=>{ STATS.endSession('closed'); releaseCamera(); });
-addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden') STATS.flush(); });
+addEventListener('pagehide', ()=>{ STATS.endSession('closed'); STATS.beacon(); releaseCamera(); });
+addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState==='hidden') STATS.beacon(); else STATS.flush();
+});
+
+function updateSyncChip(){
+  const el = document.getElementById('syncChip'); if (!el) return;
+  const S = STATS.sync, n = STATS.pendingCount();
+  if (!STATS.URL)               el.textContent = '💾 ออฟไลน์';
+  else if (S.state==='sending') el.textContent = '⏳ กำลังส่ง…';
+  else if (S.state==='error')   el.textContent = `⚠️ ค้าง ${n}`;
+  else if (n)                   el.textContent = `☁️ ค้าง ${n}`;
+  else                          el.textContent = '✅ บันทึกแล้ว';
+}
 
 /* =========================================================================
-   10. REACH PHASE — previous release (or wave start) → grasp
+   13. REACH PHASE — previous release (or wave start) → grasp
    -------------------------------------------------------------------------
-   This half was thrown away in the word game. It is a Fitts task in its own
-   right (target W = ball diameter) and it is the phase least contaminated by
-   cognition, because the patient has already chosen the ball.
+   A Fitts task in its own right, with target W = ball diameter. It is also
+   the phase least contaminated by cognition, because the patient has already
+   chosen which ball to go for.
    ========================================================================= */
 const RE = { t0:0, x0:0, y0:0, px:0, py:0, path:0, v:[], live:false };
 RE.reset = function(now){
@@ -1052,17 +1305,16 @@ RE.harvest = function(now, ball){
   if (!this.live || this.v.length < 3) return {};
   this.live = false;
   const pct = v => +(v/G.H*100).toFixed(2);
-  const D = Math.hypot(ball.x-this.x0, ball.y-this.y0);
-  const W = ball.r*2;
+  const D = Math.hypot(ball.x-this.x0, ball.y-this.y0), W = ball.r*2;
   const cm = BODY.cmPerPx();
   return {
     reach_ms: Math.round(now-this.t0),
-    reach_path_pct: pct(this.path),
-    reach_d_pct: pct(D),
+    reach_path_pct: pct(this.path), reach_d_pct: pct(D),
     reach_submoves: countSubmoves(this.v),
     reach_d_cm: cm!=null ? +(D*cm).toFixed(1) : '',
     ball_r_pct: pct(ball.r), ball_grip: ball.grip,
-    /* reach-phase index of difficulty; the transport phase gets its own */
+    /* 2D/W ≤ 1 → the index of difficulty is undefined; blank beats a negative
+       number that a regression would happily fit */
     fitts_id_reach: (W>0 && 2*D/W > 1) ? +Math.log2(2*D/W).toFixed(3) : ''
   };
 };
@@ -1076,25 +1328,25 @@ function countSubmoves(v){
 }
 
 /* =========================================================================
-   11. MOVEMENT TRACKER — transport phase (grasp → release)
+   14. MOVEMENT TRACKER — transport phase (grasp → release)
    ========================================================================= */
 const MV = { cur:null, pending:null };
 
 MV.begin = function(ball, now){
-  if (this.pending) this.flush(now, true);        // never lose a row
-  /* read the aperture trace backwards: the last moment the hand was open is
-     the start of closing, and the peak in that window is the maximum aperture
-     the patient actually achieved */
+  if (this.pending) this.flush(now, true);            // never lose a row
+  /* Read the aperture trace backwards: the last moment the hand was open is
+     the start of closing, and the peak in that window is the largest aperture
+     the patient actually achieved. */
   const win = AP.window(now-1000);
-  let apMax = 0, onset = null;
-  for (let i=win.length-1; i>=0; i--){
+  let apMax=0, onset=null;
+  for (let i=win.length-1;i>=0;i--){
     if (win[i].v > apMax) apMax = win[i].v;
-    if (onset===null && win[i].v >= CFG.GRIP_OPEN) onset = win[i].t;
+    if (onset===null && win[i].v >= CF('grip.open',0.95)) onset = win[i].t;
   }
   this.cur = {
-    apMax: apMax || '', closeMs: onset!==null ? Math.round(now-onset) : '',
+    apMax: apMax||'', closeMs: onset!==null ? Math.round(now-onset) : '',
     ap:[], palm:[], t0:now, ball,
-    grasp: P.mode==='mouse' ? 'mouse' : (HAND.curled>=3 ? 'fist' : 'pinch'),
+    grasp: P.mode==='mouse' ? 'mouse' : (HAND.curled>=CF('grip.fistFingers',3) ? 'fist':'pinch'),
     graspMs: G.hoverSince ? Math.round(now-G.hoverSince) : '',
     x0:P.x, y0:P.y, px:P.x, py:P.y, path:0, v:[], t:[],
     reach: RE.harvest(now, ball)
@@ -1107,18 +1359,17 @@ MV.sample = function(now, dt){
   m.px=P.x; m.py=P.y;
   if (P.mode==='hand'){ m.ap.push(HAND.pinchRatio); m.palm.push(HAND.palm); }
 };
-/* `target` is the colour-matched basket — always defined, and the thing the
+
+/* `target` is the colour-matched box: always defined, and the thing the
    movement was actually aimed at. `landed` is where the ball was released and
-   may be null. Fitts geometry and drop error belong to the target: a ball
-   dropped 3 cm short of the right basket and one dropped in the wrong basket
-   are different errors, and only the target makes that distinction. */
-MV.end = function(ball, target, landed, correct, dropType, now){
+   may be null. Fitts geometry and drop error belong to the TARGET — a ball
+   released 3 cm short of the right box and one dropped in the wrong box are
+   different errors, and only the target distinguishes them. */
+MV.end = function(ball, target, landed, correct, dropType, now, scoreInfo){
   const m = this.cur; this.cur = null;
   if (!m || m.v.length < 3) return;
   const pct = v => +(v/G.H*100).toFixed(2);
-  const dur  = now - m.t0;
-  const dist = Math.hypot(P.x-m.x0, P.y-m.y0);
-  const cm   = BODY.cmPerPx();
+  const dur = now-m.t0, dist = Math.hypot(P.x-m.x0, P.y-m.y0), cm = BODY.cmPerPx();
 
   const v = m.v, sm = v.map((_,i)=>(v[Math.max(0,i-1)]+v[i]+v[Math.min(v.length-1,i+1)])/3);
   let peak=0, peakI=0;
@@ -1130,44 +1381,46 @@ MV.end = function(ball, target, landed, correct, dropType, now){
   const W = target ? target.r*2 : 0;
 
   const row = Object.assign({}, m.reach, {
-    ball_color: CFG.COLORS[ball.ci].id,
-    basket_color: landed ? CFG.COLORS[landed.ci].id : '',
-    basket_zone: target ? target.zone : '',
-    correct: correct?1:0, drop_type:dropType,
-    spawn_side: ball.side,
-    basket_w_level: target ? target.wLevel : '',
-    basket_clamped: target ? target.clamped : '',
+    ball_color: COLORS[ball.ci].id,
+    box_color : landed ? COLORS[landed.ci].id : '',
+    box_zone  : target ? target.zone : '',
+    box_tier  : target ? target.tier : '',
+    correct: correct?1:0, drop_type:dropType, spawn_side:ball.side,
+    box_w_level: target ? target.wLevel : '',
+    box_clamped: target ? target.clamped : '',
     grasp:m.grasp, grasp_ms:m.graspMs,
     move_ms:Math.round(dur), path_pct:pct(m.path), dist_pct:pct(dist),
     path_ratio: dist>4 ? +(m.path/dist).toFixed(2) : '',
-    peak_vel: pct(peak), ttp_pct: dur>0 ? +((m.t[peakI]/dur)*100).toFixed(1) : '',
-    submoves: countSubmoves(m.v),
+    peak_vel:pct(peak), ttp_pct: dur>0 ? +((m.t[peakI]/dur)*100).toFixed(1) : '',
+    submoves:countSubmoves(m.v),
     drop_err_pct: err==='' ? '' : pct(err),
-    /* Fitts for the transport phase, from the actual geometry of this trial */
     fitts_d_pct: target ? pct(D) : '',
     fitts_w_pct: target ? pct(W) : '',
-    /* 2D/W ≤ 1 means the ball started inside the target: the index of
-       difficulty is undefined there, so blank it rather than logging a
-       negative number that a regression would happily fit. */
     fitts_id: (target && W>0 && 2*D/W > 1) ? +Math.log2(2*D/W).toFixed(3) : '',
     fitts_d_cm: (target && cm!=null) ? +(D*cm).toFixed(1) : '',
     ap_max: m.apMax==='' ? '' : +m.apMax.toFixed(3),
     ap_min: apMin==='' ? '' : +apMin.toFixed(3),
     ap_exc: (m.apMax!=='' && apMin!=='') ? +(m.apMax-apMin).toFixed(3) : '',
-    close_ms: m.closeMs,
+    close_ms:m.closeMs,
     hold_sd: m.ap.length>2 ? +sd(m.ap).toFixed(3) : '',
-    palm_face: m.palm.length ? +mean(m.palm).toFixed(2) : ''
+    palm_face: m.palm.length ? +mean(m.palm).toFixed(2) : '',
+    ball_wrong: ball.wrong,
+    ball_points: scoreInfo ? scoreInfo.pts : '',
+    ball_max: target ? SCORE.full(ball.tier, target.wLevel) : '',
+    bonus: scoreInfo ? scoreInfo.bonus : '',
+    streak: scoreInfo ? scoreInfo.streak : '',
+    score: SCORE.total
   });
 
-  /* Release is the half that is usually harder after stroke, and it happens
-     AFTER the ball is dropped — hold the row open until the hand reopens.
+  /* Release is the half that is usually harder after a stroke, and it happens
+     AFTER the ball leaves the hand — hold the row open until the hand reopens.
      Blank on timeout rather than capping: a capped value looks like data. */
   if (P.mode === 'hand'){ this.pending = { row, t0:now }; }
   else { row.release_ms=''; STATS.logMovement(row); }
 };
 MV.tick = function(now){
   const p = this.pending; if (!p) return;
-  const open = HAND.landmarks && HAND.pinchRatio >= CFG.GRIP_OPEN;
+  const open = HAND.landmarks && HAND.pinchRatio >= CF('grip.open',0.95);
   if (open || now - p.t0 > 1500) this.flush(now, !open);
 };
 MV.flush = function(now, timedOut){
@@ -1178,7 +1431,7 @@ MV.flush = function(now, timedOut){
 };
 
 /* =========================================================================
-   12. PINCH CHECK — clean aperture baseline, uncontaminated by reaching
+   15. PINCH CHECK — a clean aperture baseline, before reaching contaminates it
    ========================================================================= */
 const PC = { active:false, t0:0, cycles:[], state:'open', curMin:9, curMax:0, lastEdge:0 };
 PC.start = function(now){
@@ -1191,100 +1444,103 @@ PC.update = function(now){
     const a = HAND.pinchRatio;
     if (this.state==='open'){
       if (a > this.curMax) this.curMax = a;
-      if (a < CFG.GRIP_CLOSE){ this.state='closed'; this.curMin = a; }
+      if (a < CF('grip.close',0.62)){ this.state='closed'; this.curMin=a; }
     } else {
       if (a < this.curMin) this.curMin = a;
-      if (a > CFG.GRIP_OPEN + 0.05){
+      if (a > CF('grip.open',0.95)+0.05){
         this.cycles.push({ max:this.curMax, min:this.curMin, ms:now-this.lastEdge });
-        this.lastEdge = now; this.state='open'; this.curMax=a; this.curMin=9;
+        this.lastEdge=now; this.state='open'; this.curMax=a; this.curMin=9;
       }
     }
   }
-  if (this.cycles.length >= 5 || now - this.t0 > 20000) this.finish(false);
+  if (this.cycles.length >= CF('pinchCheck.cycles',5) ||
+      now-this.t0 > CF('pinchCheck.timeoutMs',20000)) this.finish(false);
 };
 PC.finish = function(skipped){
   if (!this.active) return;
   this.active = false;
   const c = this.cycles;
   if (!skipped && c.length){
+    const pf = AP.window(this.t0).map(s=>s.palm);
     STATS.push({
       type:'pinchcheck', cycles:c.length,
       ap_max:+mean(c.map(x=>x.max)).toFixed(3),
       ap_min:+mean(c.map(x=>x.min)).toFixed(3),
       ap_exc:+(mean(c.map(x=>x.max))-mean(c.map(x=>x.min))).toFixed(3),
       cycle_ms:Math.round(mean(c.map(x=>x.ms))),
-      palm_face:+mean(AP.window(this.t0).map(s=>s.palm)).toFixed(2) || '',
-      grip_close_th:CFG.GRIP_CLOSE, grip_open_th:CFG.GRIP_OPEN
+      palm_face: pf.length ? +mean(pf).toFixed(2) : '',
+      grip_close_th:CF('grip.close',0.62), grip_open_th:CF('grip.open',0.95)
     });
   }
-  BODY.freeze();                  // patient has been still and facing forward
+  BODY.freeze();                   // patient has been still and facing forward
   startCalib();
 };
 
 /* =========================================================================
-   13. REACH ENVELOPE CALIBRATION
+   16. REACH ENVELOPE CALIBRATION
    -------------------------------------------------------------------------
-   Face gives midline and scale for free, but usable reach after stroke is an
-   ability, not an anatomy: no anthropometric ratio can predict it, and its
-   change over weeks is itself an outcome. So this step stays — but it is now
-   4 s of sweeping instead of a dwell plus a sweep.
+   The face gives midline and scale for free, but usable reach after a
+   neurological event is an ABILITY, not an anatomy: no anthropometric ratio
+   predicts it, and its change over weeks is itself an outcome. So this step
+   stays — a short sweep rather than a dwell plus a sweep.
    ========================================================================= */
 const CAL = { active:false, t0:0, bins:[] };
 CAL.start = function(now){
   this.active=true; this.t0=now;
-  this.bins = new Array(CFG.CALIB_BINS).fill(0);
+  this.bins = new Array(CF('body.calibBins',12)).fill(0);
 };
 CAL.update = function(now){
   if (!this.active) return;
+  const nBins = CF('body.calibBins',12);
   if (P.mode==='hand' && HAND.landmarks){
     const o = BODY.origin();
-    const dx = (P.x-o.x)*sideSign(), dy = o.y-P.y;     // ipsilateral = +dx
-    const r  = Math.hypot(dx,dy);
-    let a = Math.atan2(dy,dx)*180/Math.PI;             // -90..180
-    if (a < 0) a = 0; if (a > 180) a = 180;
-    const bin = clamp(Math.floor(a/(180/CFG.CALIB_BINS)), 0, CFG.CALIB_BINS-1);
+    const dx=(P.x-o.x)*sideSign(), dy=o.y-P.y;        // ipsilateral = +dx
+    const r = Math.hypot(dx,dy);
+    let a = Math.atan2(dy,dx)*180/Math.PI;
+    a = clamp(a, 0, 180);
+    const bin = clamp(Math.floor(a/(180/nBins)), 0, nBins-1);
     if (r > this.bins[bin]) this.bins[bin] = r;
   }
-  if (now - this.t0 > CFG.CALIB_MS) this.finish(false);
+  if (now-this.t0 > CF('body.calibMs',9000)) this.finish(false);
 };
 CAL.finish = function(skipped){
   if (!this.active) return;
   this.active = false;
   const hit = this.bins.filter(v=>v>0).sort((a,b)=>a-b);
   if (!skipped && hit.length >= 4){
-    BODY.R = hit[Math.min(hit.length-1, Math.floor(hit.length*CFG.CALIB_PCTL))];
+    BODY.R = hit[Math.min(hit.length-1, Math.floor(hit.length*CF('body.calibPctl',0.80)))];
     BODY.rSource = 'sweep';
     BODY.profile = this.bins.map(v=>+(v/G.H*100).toFixed(1));
-    STATS.push({ type:'calib', calib_bins:CFG.CALIB_BINS,
-                 calib_profile:BODY.profile.join('|'),
-                 reach_R_pct:+(BODY.R/G.H*100).toFixed(2) });
+    STATS.push({ type:'calib', calib_bins:CF('body.calibBins',12),
+      calib_profile:BODY.profile.join('|'),
+      reach_R_pct:+(BODY.R/G.H*100).toFixed(2) });
   } else {
     BODY.R = null; BODY.rSource = skipped ? 'skipped' : 'too-few-bins';
   }
-  G.screen = 'tutorial';
-  showScreen('tutorial');
+  buildBoxes(); buildStagePlan();
+  G.screen='tutorial'; showScreen('tutorial');
 };
 
 /* =========================================================================
-   14. HIT TESTS + GAME UPDATE
+   17. HIT TESTS + UPDATE
    ========================================================================= */
 function grabRadius(ball){
   const rr = reachRect();
-  return Math.max(ball.r*CFG.GRAB_PAD_MULT, CFG.GRAB_PAD_MIN_FRAC*Math.min(rr.w,rr.h));
+  return Math.max(ball.r*GRAB_PAD_MULT, GRAB_PAD_MIN*Math.min(rr.w,rr.h));
 }
 function ballAt(x,y){
   let best=null, bd=Infinity;
   for (const b of G.balls){
     if (b.done) continue;
-    const d = Math.hypot(x-b.x, y-b.y);
+    const d = Math.hypot(x-b.x,y-b.y);
     if (d < grabRadius(b) && d < bd){ bd=d; best=b; }
   }
   return best;
 }
-function basketAt(x,y){
+function boxAt(x,y){
   let best=null, bd=Infinity;
-  for (const b of G.baskets){
-    const d = Math.hypot(x-b.x, y-b.y);
+  for (const b of G.boxes){
+    const d = Math.hypot(x-b.x,y-b.y);
     if (d < b.r*1.35 && d < bd){ bd=d; best=b; }
   }
   return best;
@@ -1292,8 +1548,15 @@ function basketAt(x,y){
 function endBtnRect(){
   const r = reachRect();
   const w = Math.min(184*G.s, r.w*0.36), h = 54*G.s, m = 14*G.s;
-  return { x: r.x + m + w/2, y: r.y + r.h - m - h/2, w, h };
+  return { x:r.x+m+w/2, y:r.y+r.h-m-h/2, w, h };
 }
+function tutBtn(){
+  const v = reachRect();
+  return { x:v.x+v.w/2, y:v.y+v.h*0.76, w:Math.min(330*G.s, v.w*0.6), h:84*G.s };
+}
+const clampToReachX = (x,r)=>{ const rr=reachRect(); return clamp(x, rr.x+r+6, rr.x+rr.w-r-6); };
+const clampToReachY = (y,r)=>{ const rr=reachRect();
+  return clamp(y, rr.y+r+BAND_TOP*G.s, rr.y+rr.h-r-BAND_BOTTOM*G.s); };
 
 function update(now, dt){
   updatePointer(now, dt);
@@ -1302,7 +1565,6 @@ function update(now, dt){
 
   if (G.screen==='pinch'){ PC.update(now); return; }
   if (G.screen==='calib'){ CAL.update(now); return; }
-
   if (G.screen==='tutorial'){
     const b = tutBtn();
     const over = Math.abs(P.x-b.x)<b.w*0.68 && Math.abs(P.y-b.y)<b.h*0.85;
@@ -1310,19 +1572,18 @@ function update(now, dt){
     if (over && wantsGrab()){ startRun(); P.needRelease = true; }
     return;
   }
-
   if (G.screen !== 'play') return;
 
   if (G.phase === 'gap'){
     if (now >= G.gapUntil) beginWave();
-    return;                                    // no picking up during the gap
+    return;                                    // nothing is pickable during the gap
   }
   const locked = now < G.lockedUntil;
 
-  /* hover (timestamped: hover → grasp latency is a rehab measure) */
+  /* hover is timestamped: hover → grasp latency is itself a rehab measure */
   const prev = G.hover;
   G.hover = null;
-  if (!G.held && !locked) G.hover = ballAt(P.x, P.y);
+  if (!G.held && !locked) G.hover = ballAt(P.x,P.y);
   if (G.hover && G.hover !== prev) G.hoverSince = now;
 
   if (!locked) RE.sample(now, dt);
@@ -1332,7 +1593,7 @@ function update(now, dt){
     G.held = G.hover;
     G.grabOff.x = G.held.x-P.x; G.grabOff.y = G.held.y-P.y;
     G.balls.splice(G.balls.indexOf(G.held),1); G.balls.push(G.held);
-    G.held.pop = 1;
+    G.held.pop = 1; G.held.touched = true;
     if (STATS.wave && !STATS.wave.firstSide) STATS.wave.firstSide = G.held.side;
     MV.begin(G.held, now);
   }
@@ -1345,38 +1606,44 @@ function update(now, dt){
   /* release */
   if (P.released && G.held){
     const ball = G.held; G.held = null;
-    const target = G.baskets.find(b=>b.ci === ball.ci) || null;
-    const basket = basketAt(ball.x, ball.y);
-    if (basket && basket.ci === ball.ci){
-      MV.end(ball, target, basket, true, 'in_basket', now);
-      ball.done = true; basket.flash = 1; basket.fill++;
+    const target = boxOf(ball.ci);
+    const landed = boxAt(ball.x, ball.y);
+
+    if (landed && landed.ci === ball.ci){
+      const info = SCORE.award(ball.tier, ball.wrong, target.wLevel);
+      MV.end(ball, target, landed, true, 'in_box', now, info);
+      ball.done = true; landed.flash = 1; landed.fill++;
       G.collected++; G.collectedTotal++;
       if (STATS.wave){ STATS.wave.done++; STATS.wave.correct++; }
-      if (STATS.session) STATS.session.correct++;
       G.waveLastDrop = now;
-      burst(ball.x, ball.y, CFG.COLORS[ball.ci].hex);
-    } else if (basket){
-      /* wrong basket — a perceptual/cognitive error, not a motor one.
-         The ball goes home rather than vanishing, so the patient can retry. */
-      MV.end(ball, target, basket, false, 'wrong_basket', now);
-      ball.wrong = 1; ball.tx = ball.spawnX; ball.ty = ball.spawnY;
+      burst(ball.x, ball.y, COLORS[ball.ci].hex);
+      G.banner = { text:`+${info.pts}`, sub: info.bonus ? `โบนัสต่อเนื่อง +${info.bonus}` : '',
+                   t:now, good:true };
+    } else if (landed){
+      /* wrong box — a perceptual/cognitive error. The ball returns home so it
+         can be retried; the streak pauses rather than resetting. */
+      ball.wrong++; SCORE.wrongTotal++;
+      MV.end(ball, target, landed, false, 'wrong_box', now, null);
+      ball.flashWrong = 1; ball.tx = ball.spawnX; ball.ty = ball.spawnY;
       if (STATS.wave) STATS.wave.wrong++;
-      if (STATS.session) STATS.session.wrong++;
-      G.banner = { text:'สีไม่ตรงกัน', sub:'ลองใหม่อีกครั้ง', t:now };
+      G.banner = { text:'สีไม่ตรงกัน', sub:'ลองใหม่อีกครั้ง', t:now, good:false };
     } else {
-      /* released mid-air — grip failure. The ball stays where it fell. */
-      MV.end(ball, target, null, false, 'dropped', now);
-      ball.tx = clampToReach(ball.x, ball.r); ball.ty = clampToReachY(ball.y, ball.r);
+      /* released in mid-air — a grip failure. Never penalised: it is the
+         impairment being treated, not a decision. The ball stays where it fell
+         so the patient can pick it up again. */
+      MV.end(ball, target, null, false, 'dropped', now, null);
+      ball.tx = clampToReachX(ball.x, ball.r);
+      ball.ty = clampToReachY(ball.y, ball.r);
     }
     RE.reset(now);
   }
 
-  /* wave end conditions */
+  /* wave end */
   const alive = G.balls.filter(b=>!b.done).length;
   if (!locked){
-    if (G.collected >= CFG.COLLECT_PER_WAVE || alive === 0) endWave('quota');
-    else if (now - G.waveLastDrop > CFG.WAVE_IDLE_MS) endWave('idle');
-    else if (now - G.waveT0 > CFG.WAVE_MAX_MS) endWave('timeout');
+    if (G.collected >= CF('game.collectPerWave',4) || alive === 0) endWave('quota');
+    else if (now - G.waveLastDrop > CF('game.waveIdleMs',14000))    endWave('idle');
+    else if (now - G.waveT0     > CF('game.waveMaxMs',75000))       endWave('timeout');
   }
 
   /* bookkeeping */
@@ -1390,38 +1657,34 @@ function update(now, dt){
   /* จบเกม — dwell to confirm, so a stray pinch cannot end the session */
   const eb = endBtnRect();
   const overEnd = Math.abs(P.x-eb.x)<eb.w*0.62 && Math.abs(P.y-eb.y)<eb.h*0.85;
-  G.endHold = clamp(G.endHold + (overEnd && P.down ? dt/1200 : -dt/500), 0, 1);
-  if (G.endHold >= 1){ G.endHold = 0; finishSession('early'); return; }
+  G.endHold = clamp(G.endHold + (overEnd && P.down ? dt/CF('game.endHoldMs',1200) : -dt/500), 0, 1);
+  if (G.endHold >= 1){ G.endHold=0; finishSession('early'); return; }
 
-  /* physics */
+  /* motion */
   G.balls.forEach(b=>{
-    const k = 1 - Math.exp(-((b===G.held) ? 34 : 15) * dt/1000);
+    const k = 1 - Math.exp(-((b===G.held)?34:15)*dt/1000);
     b.x += (b.tx-b.x)*k; b.y += (b.ty-b.y)*k;
     const want = (b===G.held) ? 1 : (b===G.hover ? 0.45 : 0);
     b.lift += (want-b.lift)*0.2;
-    b.pop *= 0.88; b.wrong *= 0.96;
+    b.pop *= 0.88; b.flashWrong *= 0.95;
   });
-  G.baskets.forEach(b=> b.flash *= 0.94 );
-
+  G.boxes.forEach(b=> b.flash *= 0.94 );
   G.particles = G.particles.filter(p=>{
     p.x+=p.vx; p.y+=p.vy; p.vy+=0.22; p.vx*=0.99; p.life-=dt*0.0007;
     return p.life>0 && p.y<G.H+60;
   });
 }
-const clampToReach  = (x,r)=>{ const rr=reachRect(); return clamp(x, rr.x+r+6, rr.x+rr.w-r-6); };
-const clampToReachY = (y,r)=>{ const rr=reachRect();
-  return clamp(y, rr.y+r+CFG.BAND_TOP*G.s, rr.y+rr.h-r-CFG.BAND_BOTTOM*G.s); };
 
 function burst(x,y,hex){
   for (let i=0;i<50;i++){
-    const a = Math.random()*Math.PI*2, sp = 1.5+Math.random()*5;
+    const a=Math.random()*Math.PI*2, sp=1.5+Math.random()*5;
     G.particles.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-2.5,
-      life:1, size:(2+Math.random()*4)*G.s, c: i%3 ? hex : '#ffffff' });
+      life:1, size:(2+Math.random()*4)*G.s, c: i%3 ? hex : T.ink });
   }
 }
 
 /* =========================================================================
-   15. DRAW
+   18. DRAW
    ========================================================================= */
 function rr(x,y,w,h,r){
   ctx.beginPath();
@@ -1431,81 +1694,105 @@ function rr(x,y,w,h,r){
 function glassPanel(x,y,w,h,r,alpha=1){
   ctx.save(); ctx.globalAlpha = alpha;
   rr(x,y,w,h,r);
-  const g = ctx.createLinearGradient(x,y,x+w,y+h);
-  g.addColorStop(0,'rgba(255,255,255,.16)'); g.addColorStop(1,'rgba(255,255,255,.06)');
-  ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=1; ctx.stroke();
+  if (T.panelDark){
+    const g = ctx.createLinearGradient(x,y,x+w,y+h);
+    g.addColorStop(0,'rgba(255,255,255,.16)'); g.addColorStop(1,'rgba(255,255,255,.06)');
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = 'rgba(255,255,255,.86)';
+  ctx.fill();
+  ctx.strokeStyle = T.line; ctx.lineWidth = 1; ctx.stroke();
   ctx.restore();
 }
-function text(str,x,y,size,weight='600',color='#fff',align='center'){
-  ctx.save(); ctx.font=`${weight} ${size}px "Noto Sans Thai", Sarabun, system-ui, sans-serif`;
-  ctx.fillStyle=color; ctx.textAlign=align; ctx.textBaseline='middle';
+function text(str,x,y,size,weight='600',color,align='center'){
+  ctx.save();
+  ctx.font = `${weight} ${size}px "Noto Sans Thai", Sarabun, system-ui, sans-serif`;
+  ctx.fillStyle = color || T.ink; ctx.textAlign = align; ctx.textBaseline = 'middle';
   ctx.fillText(str,x,y); ctx.restore();
 }
-function drawScrim(a=0.30){ ctx.save(); ctx.fillStyle=`rgba(7,11,24,${a})`; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
+function paintBackground(){
+  if (T.bg){ ctx.save(); ctx.fillStyle=T.bg; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
+  else if (T.scrim){ ctx.save(); ctx.fillStyle=`rgba(7,11,24,${T.scrim})`; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
+}
 
-/* Redundant shape coding: hue alone excludes ~8% of men, and the stroke
-   population skews older and male. Every ball and basket carries a shape. */
-function shapePath(shape, x, y, r){
+/* Shape is a redundant channel alongside hue — the match is never carried by
+   colour alone. */
+function shapePath(shape,x,y,r){
   ctx.beginPath();
   if (shape==='circle'){ ctx.arc(x,y,r,0,Math.PI*2); }
   else if (shape==='square'){ const s=r*0.86; ctx.rect(x-s,y-s,s*2,s*2); }
   else if (shape==='triangle'){
-    for(let i=0;i<3;i++){ const a=-Math.PI/2 + i*2*Math.PI/3;
+    for (let i=0;i<3;i++){ const a=-Math.PI/2+i*2*Math.PI/3;
       const px=x+Math.cos(a)*r*1.08, py=y+Math.sin(a)*r*1.08;
-      i? ctx.lineTo(px,py) : ctx.moveTo(px,py); }
+      i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
     ctx.closePath();
   } else if (shape==='diamond'){
     ctx.moveTo(x,y-r*1.1); ctx.lineTo(x+r*0.9,y); ctx.lineTo(x,y+r*1.1); ctx.lineTo(x-r*0.9,y); ctx.closePath();
-  } else { /* star */
-    for(let i=0;i<10;i++){ const rr2 = i%2 ? r*0.48 : r*1.12;
+  } else {
+    for (let i=0;i<10;i++){ const rad = i%2 ? r*0.48 : r*1.12;
       const a = -Math.PI/2 + i*Math.PI/5;
-      const px=x+Math.cos(a)*rr2, py=y+Math.sin(a)*rr2;
-      i? ctx.lineTo(px,py) : ctx.moveTo(px,py); }
+      const px=x+Math.cos(a)*rad, py=y+Math.sin(a)*rad;
+      i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
     ctx.closePath();
   }
 }
 
-function drawBaskets(){
-  G.baskets.forEach(b=>{
-    const c = CFG.COLORS[b.ci];
+/* A box drawn as a square would have a width that changes with the approach
+   angle, so a cross-midline reach and an overhead reach into the same box
+   would have different real target widths while logging the same W. The body
+   reads as a box; the MOUTH is circular, so W = mouth diameter regardless of
+   the direction it is approached from. */
+function drawBoxes(){
+  const live = new Set(targetBoxes().map(b=>b.ci));
+  G.boxes.forEach(b=>{
+    const c = COLORS[b.ci];
+    const bw = b.r*2.15, bh = b.r*1.85;
     ctx.save();
-    /* opaque rim + dark well: a colour judged against live video is much
-       harder than the same colour on a solid field */
-    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
-    ctx.fillStyle = 'rgba(7,11,24,.62)'; ctx.fill();
-    ctx.lineWidth = Math.max(5, b.r*0.20);
-    ctx.strokeStyle = c.hex; ctx.stroke();
-    if (b.flash>0.02){
-      ctx.globalAlpha = b.flash; ctx.lineWidth = Math.max(8, b.r*0.30);
-      ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.globalAlpha = 1;
-    }
-    /* the shape is the redundant channel — same glyph as its balls */
-    shapePath(c.shape, b.x, b.y, b.r*0.46);
-    ctx.fillStyle = c.hex; ctx.globalAlpha = 0.9; ctx.fill(); ctx.globalAlpha = 1;
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.stroke();
+    if (!live.has(b.ci)) ctx.globalAlpha = 0.5;   // distractor: visibly not in play
+    rr(b.x-bw/2, b.y-bh/2+b.r*0.12, bw, bh, b.r*0.28);
+    ctx.fillStyle = T.well; ctx.fill();
+    ctx.lineWidth = Math.max(3, b.r*0.11); ctx.strokeStyle = c.dark; ctx.stroke();
 
-    if (b.fill>0) text(String(b.fill), b.x, b.y+b.r+15*G.s, 15*G.s, '700', 'rgba(255,255,255,.85)');
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+    ctx.fillStyle = T.panelDark ? 'rgba(2,6,23,.72)' : 'rgba(15,23,42,.10)'; ctx.fill();
+    ctx.lineWidth = Math.max(5, b.r*0.20); ctx.strokeStyle = c.hex; ctx.stroke();
+    if (b.flash > 0.02){
+      ctx.globalAlpha = b.flash; ctx.lineWidth = Math.max(8, b.r*0.30);
+      ctx.strokeStyle = T.good; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    shapePath(c.shape, b.x, b.y, b.r*0.46);
+    ctx.fillStyle = c.hex; ctx.globalAlpha = .92; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.lineWidth = 2; ctx.strokeStyle = T.outline; ctx.stroke();
     ctx.restore();
+
+    if (b.fill > 0) text(String(b.fill), b.x, b.y+bh*0.62, 15*G.s, '700', T.sub);
   });
 }
 
-function drawBalls(now){
+function drawBalls(){
   G.balls.forEach(b=>{
     if (b.done) return;
-    const c = CFG.COLORS[b.ci];
+    const c = COLORS[b.ci];
     const r = b.r*(1 + b.pop*0.25 + b.lift*0.10);
     ctx.save();
-    ctx.shadowColor='rgba(0,0,0,.55)'; ctx.shadowBlur=18*G.s; ctx.shadowOffsetY=6*G.s;
+    ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=16*G.s; ctx.shadowOffsetY=5*G.s;
     shapePath(c.shape, b.x, b.y, r);
     ctx.fillStyle = c.hex; ctx.fill();
-    ctx.shadowColor='transparent';
+    ctx.shadowColor = 'transparent';
     ctx.lineWidth = Math.max(2.5, r*0.13);
-    ctx.strokeStyle = b.wrong>0.05 ? '#fff' : 'rgba(255,255,255,.92)';
+    ctx.strokeStyle = b.flashWrong>0.05 ? T.bad : T.outline;
     ctx.stroke();
     ctx.lineWidth = 1.5; ctx.strokeStyle = c.dark;
     shapePath(c.shape, b.x, b.y, r*0.62); ctx.stroke();
     ctx.restore();
+
+    /* The ball's value is shown only while it is held. Balls arrive every few
+       seconds; a number ticking that fast in the corner invites hurrying, and
+       speed pressure degrades exactly the movement quality being measured. */
+    if (b === G.held && CF('game.showScore',true)){
+      const tgt = boxOf(b.ci);
+      text(String(SCORE.value(b.tier, b.wrong, tgt.wLevel)),
+           b.x, b.y-r-16*G.s, 17*G.s, '700', T.good);
+    }
   });
 }
 
@@ -1515,195 +1802,183 @@ function drawHand(){
   if (!HAND.landmarks || P.mode!=='hand') return;
   const pts = HAND.landmarks.map(l=>mapPoint(l.x,l.y));
   ctx.save();
-  ctx.strokeStyle = HAND.grabbing ? 'rgba(52,211,153,.75)' : 'rgba(255,255,255,.35)';
+  ctx.strokeStyle = HAND.grabbing ? T.good : T.line;
   ctx.lineWidth = 3;
   CONNS.forEach(([a,b])=>{ ctx.beginPath(); ctx.moveTo(pts[a].x,pts[a].y); ctx.lineTo(pts[b].x,pts[b].y); ctx.stroke(); });
-  ctx.fillStyle = HAND.grabbing ? '#34d399' : 'rgba(255,255,255,.6)';
+  ctx.fillStyle = HAND.grabbing ? T.good : T.dim;
   pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p.x,p.y,3.4,0,Math.PI*2); ctx.fill(); });
   ctx.restore();
 }
 function drawCursor(){
   if (!P.active) return;
   ctx.save();
-  ctx.beginPath(); ctx.arc(P.x,P.y, P.down? 13*G.s : 18*G.s, 0, Math.PI*2);
-  ctx.strokeStyle = P.down ? '#34d399' : 'rgba(255,255,255,.85)';
-  ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(P.x,P.y, P.down?13*G.s:18*G.s, 0, Math.PI*2);
+  ctx.strokeStyle = P.down ? T.good : T.outline; ctx.lineWidth = 3; ctx.stroke();
   ctx.beginPath(); ctx.arc(P.x,P.y,3,0,Math.PI*2);
-  ctx.fillStyle = P.down ? '#34d399' : 'rgba(255,255,255,.9)'; ctx.fill();
+  ctx.fillStyle = P.down ? T.good : T.outline; ctx.fill();
   ctx.restore();
 }
 function drawParticles(){
   G.particles.forEach(p=>{
-    ctx.save(); ctx.globalAlpha=Math.max(0,p.life);
-    ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.globalAlpha = Math.max(0,p.life);
+    ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill(); ctx.restore();
   });
 }
 
 function drawHUD(){
   const rrc = reachRect();
-  const pw = Math.min(360*G.s, rrc.w*0.6), ph = 54*G.s;
+  const pw = Math.min(430*G.s, rrc.w*0.72), ph = 56*G.s;
   const px = rrc.x + (rrc.w-pw)/2, py = rrc.y + 10*G.s;
   glassPanel(px,py,pw,ph,16*G.s);
-  const alive = G.balls.filter(b=>!b.done).length;
-  text(`รอบ ${G.wave+1}/${G.wavesTotal}`, px+pw*0.22, py+ph/2, 19*G.s, '700');
-  text(`เก็บแล้ว ${G.collected}/${CFG.COLLECT_PER_WAVE}`, px+pw*0.58, py+ph/2, 17*G.s, '600', 'rgba(255,255,255,.85)');
-  text(`เหลือ ${alive}`, px+pw*0.87, py+ph/2, 15*G.s, '600', 'rgba(255,255,255,.6)');
+  const st = stageOf(G.wave);
+  const show = CF('game.showScore',true);
+  text(`ด่าน${TIER_TH[st.tier]} · รอบ ${G.wave+1}/${G.wavesTotal}`,
+       px+pw*(show?0.26:0.34), py+ph/2, 17*G.s, '700');
+  text(`${G.collected}/${CF('game.collectPerWave',4)}`,
+       px+pw*(show?0.56:0.72), py+ph/2, 17*G.s, '600', T.sub);
+  if (show) text(String(SCORE.total), px+pw*0.85, py+ph/2, 24*G.s, '700', T.good);
 }
 
 function drawEndButton(){
   const b = endBtnRect();
   glassPanel(b.x-b.w/2, b.y-b.h/2, b.w, b.h, 14*G.s, 0.95);
-  if (G.endHold>0.01){
+  if (G.endHold > 0.01){
     ctx.save(); rr(b.x-b.w/2, b.y-b.h/2, b.w*G.endHold, b.h, 14*G.s);
     ctx.fillStyle='rgba(244,63,94,.45)'; ctx.fill(); ctx.restore();
   }
   text('จบเกม', b.x, b.y, 18*G.s, '700');
 }
 
-function tutBtn(){
-  const v = reachRect();
-  const w = Math.min(330*G.s, v.w*0.6), h = 84*G.s;
-  return { x: v.x+v.w/2, y: v.y+v.h*0.74, w, h };
-}
 function drawTutorial(){
-  drawScrim(0.45);
+  paintBackground(); if (T.bg===null) { ctx.save(); ctx.fillStyle='rgba(7,11,24,.42)'; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
   const v = reachRect();
-  const pw = Math.min(660*G.s, v.w*0.9), ph = 300*G.s;
-  const px = v.x+(v.w-pw)/2, py = v.y + v.h*0.10;
+  const pw = Math.min(680*G.s, v.w*0.92), ph = 300*G.s;
+  const px = v.x+(v.w-pw)/2, py = v.y + v.h*0.09;
   glassPanel(px,py,pw,ph,26*G.s);
   text('จับคู่สีและรูปทรง', px+pw/2, py+46*G.s, 32*G.s, '700');
-  text('หยิบลูกบอล แล้วนำไปใส่ตะกร้าที่มีสีและรูปทรงเดียวกัน',
-       px+pw/2, py+96*G.s, 19*G.s, '600', 'rgba(255,255,255,.85)');
+  text('หยิบลูกบอล แล้วนำไปใส่กล่องที่มีสีและรูปทรงเดียวกัน',
+       px+pw/2, py+94*G.s, 19*G.s, '600', T.sub);
   text('ไม่ต้องรีบ — เคลื่อนไหวด้วยความเร็วที่สบายและสม่ำเสมอ',
-       px+pw/2, py+128*G.s, 17*G.s, '600', 'rgba(255,255,255,.65)');
+       px+pw/2, py+126*G.s, 17*G.s, '600', T.dim);
 
-  /* live preview of the prescribed baskets, so the OT can sanity-check the
-     layout against the patient before the first ball ever appears */
-  const demoY = py+200*G.s;
-  G.baskets.forEach((b,i)=>{
-    const c = CFG.COLORS[b.ci];
-    const x = px+pw/2 + (i-(G.baskets.length-1)/2)*76*G.s;
+  /* live preview of the prescribed boxes, so the OT can sanity-check the
+     layout against this patient before the first ball appears */
+  const demoY = py+205*G.s;
+  G.boxes.forEach((b,i)=>{
+    const c = COLORS[b.ci];
+    const x = px+pw/2 + (i-(G.boxes.length-1)/2)*82*G.s;
     ctx.save();
-    ctx.beginPath(); ctx.arc(x,demoY,26*G.s,0,Math.PI*2);
-    ctx.fillStyle='rgba(7,11,24,.6)'; ctx.fill();
-    ctx.lineWidth=5; ctx.strokeStyle=c.hex; ctx.stroke();
-    shapePath(c.shape, x, demoY, 12*G.s); ctx.fillStyle=c.hex; ctx.fill();
+    rr(x-30*G.s, demoY-24*G.s, 60*G.s, 50*G.s, 9*G.s);
+    ctx.fillStyle = T.well; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = c.dark; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, demoY-2*G.s, 20*G.s, 0, Math.PI*2);
+    ctx.fillStyle = T.panelDark ? 'rgba(2,6,23,.7)' : 'rgba(15,23,42,.1)'; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = c.hex; ctx.stroke();
+    shapePath(c.shape, x, demoY-2*G.s, 10*G.s); ctx.fillStyle=c.hex; ctx.fill();
     ctx.restore();
-    const z = CFG.ZONES.find(z=>z.id===b.zone);
-    text(z ? z.th : '', x, demoY+40*G.s, 11.5*G.s, '600', 'rgba(255,255,255,.7)');
+    const z = ZONES.find(z=>z.id===b.zone);
+    text(z?z.th:'', x, demoY+40*G.s, 11.5*G.s, '600', T.dim);
   });
 
   const b = tutBtn();
-  ctx.save();
-  rr(b.x-b.w/2,b.y-b.h/2,b.w,b.h,20*G.s);
-  ctx.fillStyle = G.hover==='btn' ? '#34d399' : '#10b981'; ctx.fill();
-  ctx.restore();
-  text('เริ่มเล่น · Start', b.x, b.y, 26*G.s, '700');
-  text('🤏 จีบนิ้วค้างไว้ตรงปุ่ม', b.x, b.y+b.h*0.85, 14*G.s, '600', 'rgba(255,255,255,.7)');
+  ctx.save(); rr(b.x-b.w/2,b.y-b.h/2,b.w,b.h,20*G.s);
+  ctx.fillStyle = G.hover==='btn' ? '#34d399' : '#10b981'; ctx.fill(); ctx.restore();
+  text('เริ่มเล่น · Start', b.x, b.y, 26*G.s, '700', '#062a1f');
+  text('🤏 จีบนิ้วค้างไว้ตรงปุ่ม', b.x, b.y+b.h*0.85, 14*G.s, '600', T.dim);
 }
 
-function drawPinchCheck(now){
-  drawScrim(0.5);
+function drawPinchCheck(){
+  paintBackground(); if (T.bg===null){ ctx.save(); ctx.fillStyle='rgba(7,11,24,.48)'; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
   const v = reachRect();
   const pw = Math.min(560*G.s, v.w*0.9), ph = 250*G.s;
   const px = v.x+(v.w-pw)/2, py = v.y+v.h*0.22;
   glassPanel(px,py,pw,ph,26*G.s);
-  text('เปิด–ปิดมือ 5 ครั้ง', px+pw/2, py+50*G.s, 30*G.s, '700');
+  const need = CF('pinchCheck.cycles',5);
+  text(`เปิด–ปิดมือ ${need} ครั้ง`, px+pw/2, py+50*G.s, 30*G.s, '700');
   text('กางนิ้วออกให้สุด แล้วจีบนิ้วโป้งกับนิ้วชี้เข้าหากัน',
-       px+pw/2, py+94*G.s, 18*G.s, '600', 'rgba(255,255,255,.8)');
+       px+pw/2, py+94*G.s, 18*G.s, '600', T.sub);
 
-  /* live aperture meter: the patient can see exactly where the threshold is */
-  const bw = pw*0.72, bx = px+(pw-bw)/2, by = py+140*G.s, bh = 26*G.s;
-  rr(bx,by,bw,bh,bh/2); ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fill();
+  /* live aperture meter — the patient can see where the threshold is */
+  const bw=pw*0.72, bx=px+(pw-bw)/2, by=py+140*G.s, bh=26*G.s;
+  rr(bx,by,bw,bh,bh/2); ctx.fillStyle = T.panelDark?'rgba(255,255,255,.12)':'rgba(15,23,42,.10)'; ctx.fill();
   const t = clamp((HAND.pinchRatio-0.2)/1.5, 0, 1);
   rr(bx,by,Math.max(6,bw*t),bh,bh/2);
-  ctx.fillStyle = HAND.pinchRatio < CFG.GRIP_CLOSE ? '#34d399' : 'rgba(255,255,255,.75)'; ctx.fill();
-  [CFG.GRIP_CLOSE, CFG.GRIP_OPEN].forEach(th=>{
+  ctx.fillStyle = HAND.pinchRatio < CF('grip.close',0.62) ? T.good : T.dim; ctx.fill();
+  [CF('grip.close',0.62), CF('grip.open',0.95)].forEach(th=>{
     const tx = bx + bw*clamp((th-0.2)/1.5,0,1);
-    ctx.save(); ctx.strokeStyle='rgba(255,255,255,.7)'; ctx.lineWidth=2;
+    ctx.save(); ctx.strokeStyle=T.line; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(tx,by-5); ctx.lineTo(tx,by+bh+5); ctx.stroke(); ctx.restore();
   });
-  text(`${PC.cycles.length} / 5`, px+pw/2, py+200*G.s, 26*G.s, '700', '#6ee7b7');
-  if (!HAND.landmarks) text('ยกมือขึ้นให้กล้องเห็น', px+pw/2, py+ph+26*G.s, 16*G.s, '600', 'rgba(252,165,165,.9)');
+  text(`${PC.cycles.length} / ${need}`, px+pw/2, py+200*G.s, 26*G.s, '700', T.good);
+  if (!HAND.landmarks) text('ยกมือขึ้นให้กล้องเห็น', px+pw/2, py+ph+26*G.s, 16*G.s, '600', T.bad);
 }
 
 function drawCalib(now){
-  drawScrim(0.42);
-  const o = BODY.origin(), R0 = reachRect().h*0.42;
-  const v = reachRect();
+  paintBackground(); if (T.bg===null){ ctx.save(); ctx.fillStyle='rgba(7,11,24,.40)'; ctx.fillRect(0,0,G.W,G.H); ctx.restore(); }
+  const o = BODY.origin(), v = reachRect(), nBins = CF('body.calibBins',12);
   const pw = Math.min(560*G.s, v.w*0.9), ph = 150*G.s;
   const px = v.x+(v.w-pw)/2, py = v.y+16*G.s;
   glassPanel(px,py,pw,ph,24*G.s);
   text('กวาดแขนให้ไกลที่สุด', px+pw/2, py+44*G.s, 28*G.s, '700');
-  text('เอื้อมออกไปให้สุด แล้วกวาดเป็นครึ่งวงกลม ช้า ๆ',
-       px+pw/2, py+86*G.s, 17*G.s, '600', 'rgba(255,255,255,.8)');
-  const left = Math.max(0, CFG.CALIB_MS-(now-CAL.t0));
-  text(`${(left/1000).toFixed(0)} วินาที`, px+pw/2, py+120*G.s, 18*G.s, '700', '#6ee7b7');
+  text('เอื้อมออกไปให้สุด แล้วกวาดเป็นครึ่งวงกลม ช้า ๆ', px+pw/2, py+86*G.s, 17*G.s, '600', T.sub);
+  const left = Math.max(0, CF('body.calibMs',9000) - (now-CAL.t0));
+  text(`${(left/1000).toFixed(0)} วินาที`, px+pw/2, py+120*G.s, 18*G.s, '700', T.good);
 
-  /* origin marker + the envelope recorded so far */
   ctx.save();
-  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=2;
+  ctx.strokeStyle = T.line; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(o.x,o.y,10*G.s,0,Math.PI*2); ctx.stroke();
   ctx.beginPath();
-  for (let i=0;i<CFG.CALIB_BINS;i++){
-    const a = RAD((i+0.5)*(180/CFG.CALIB_BINS));
-    const r = CAL.bins[i] || R0*0.25;
+  for (let i=0;i<nBins;i++){
+    const a = RAD((i+0.5)*(180/nBins));
+    const r = CAL.bins[i] || reachRect().h*0.10;
     const x = o.x + Math.cos(a)*r*sideSign(), y = o.y - Math.sin(a)*r;
-    i? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
   }
-  ctx.strokeStyle='rgba(52,211,153,.85)'; ctx.lineWidth=4; ctx.stroke();
+  ctx.strokeStyle = T.good; ctx.lineWidth = 4; ctx.stroke();
   ctx.restore();
-  if (!HAND.landmarks) text('ยกมือขึ้นให้กล้องเห็น', o.x, o.y-30*G.s, 16*G.s, '600', 'rgba(252,165,165,.9)');
+  if (!HAND.landmarks) text('ยกมือขึ้นให้กล้องเห็น', o.x, o.y-30*G.s, 16*G.s, '600', T.bad);
 }
 
 function drawBanner(now){
   if (!G.banner) return;
   const age = now - G.banner.t;
-  if (age > 1600){ G.banner = null; return; }
-  const a = age<200 ? age/200 : (age>1300 ? (1600-age)/300 : 1);
+  if (age > 1500){ G.banner = null; return; }
+  const a = age<150 ? age/150 : (age>1200 ? (1500-age)/300 : 1);
   const v = reachRect();
   ctx.save(); ctx.globalAlpha = clamp(a,0,1);
-  const pw = Math.min(420*G.s, v.w*0.8), ph = 84*G.s;
-  const px = v.x+(v.w-pw)/2, py = v.y+v.h*0.30;
+  const pw = Math.min(400*G.s, v.w*0.8), ph = G.banner.sub ? 84*G.s : 58*G.s;
+  const px = v.x+(v.w-pw)/2, py = v.y+v.h*0.24;
   glassPanel(px,py,pw,ph,20*G.s);
-  text(G.banner.text, px+pw/2, py+32*G.s, 26*G.s, '700');
-  text(G.banner.sub || '', px+pw/2, py+62*G.s, 16*G.s, '600', 'rgba(255,255,255,.75)');
+  text(G.banner.text, px+pw/2, py+(G.banner.sub?32*G.s:ph/2), 26*G.s, '700',
+       G.banner.good===false ? T.warn : (G.banner.good ? T.good : T.ink));
+  if (G.banner.sub) text(G.banner.sub, px+pw/2, py+62*G.s, 16*G.s, '600', T.sub);
   ctx.restore();
 }
 
 function drawStatus(){
-  const v = reachRect();
-  const msgs = [];
+  const v = reachRect(), msgs = [];
   if (G.aiState!=='ready') msgs.push('กำลังเปิดกล้อง…');
   else if (P.mode==='mouse') msgs.push('โหมดเมาส์ (ไม่นับเป็นข้อมูลการเคลื่อนไหว)');
   else if (!HAND.landmarks) msgs.push('ไม่พบมือ — ยกมือขึ้นให้กล้องเห็น');
-  if (G.screen==='play' && !BODY.fresh(performance.now()))
-    msgs.push('ไม่พบใบหน้า — ใช้ค่ากึ่งกลางล่าสุด');
+  if (G.screen==='play' && !BODY.fresh(performance.now())) msgs.push('ไม่พบใบหน้า — ใช้ค่ากึ่งกลางล่าสุด');
   if (!msgs.length) return;
-  text(msgs.join('  ·  '), v.x+v.w/2, v.y+v.h-16*G.s, 13.5*G.s, '600', 'rgba(255,255,255,.65)');
+  text(msgs.join('  ·  '), v.x+v.w/2, v.y+v.h-16*G.s, 13.5*G.s, '600', T.dim);
 }
 
 function draw(now){
   ctx.clearRect(0,0,G.W,G.H);
-  if (G.screen==='pinch'){ drawPinchCheck(now); drawHand(); drawCursor(); drawStatus(); return; }
-  if (G.screen==='calib'){ drawCalib(now);      drawHand(); drawCursor(); drawStatus(); return; }
-  if (G.screen==='tutorial'){ drawTutorial();   drawHand(); drawCursor(); drawStatus(); return; }
-  if (G.screen!=='play') return;
+  if (G.screen==='pinch'){ drawPinchCheck(); drawHand(); drawCursor(); drawStatus(); return; }
+  if (G.screen==='calib'){ drawCalib(now);   drawHand(); drawCursor(); drawStatus(); return; }
+  if (G.screen==='tutorial'){ drawTutorial(); drawHand(); drawCursor(); drawStatus(); return; }
+  if (G.screen!=='play'){ if (T.bg) paintBackground(); return; }
 
-  drawScrim(0.22);
-  drawBaskets();
-  drawBalls(now);
-  drawParticles();
-  drawHand();
-  drawEndButton();
-  drawHUD();
-  drawBanner(now);
-  drawCursor();
-  drawStatus();
+  paintBackground();
+  drawBoxes(); drawBalls(); drawParticles(); drawHand();
+  drawEndButton(); drawHUD(); drawBanner(now); drawCursor(); drawStatus();
 }
 
 /* =========================================================================
-   16. MAIN LOOP  (rAF drives both inference and drawing — one timeline)
+   19. MAIN LOOP — rAF drives inference and drawing on one timeline
    ========================================================================= */
 let last = performance.now();
 function loop(now){
@@ -1716,11 +1991,11 @@ function loop(now){
 requestAnimationFrame(loop);
 
 /* =========================================================================
-   17. SCREEN FLOW
+   20. SCREEN FLOW
    ========================================================================= */
 const el = id => document.getElementById(id);
 const startScreenEl = el('startScreen'), formScreen = el('formScreen'), endScreen = el('endScreen');
-const stepBar = el('stepBar'), camBanner = el('camBanner');
+const stepBar = el('stepBar'), camBanner = el('camBanner'), topBar = el('topBar');
 
 function showScreen(which){
   startScreenEl.classList.toggle('hidden', which!=='start');
@@ -1733,26 +2008,42 @@ function showCamProblem(info){
   el('camTitle').textContent = info.th; el('camFix').textContent = info.fix;
   camBanner.classList.remove('hidden');
 }
-function hideCamProblem(){ camBanner.classList.add('hidden'); G.camMsg = null; }
+function hideCamProblem(){ camBanner.classList.add('hidden'); }
 
-/* --- zone checklist --- */
+/* ---- form ---- */
 function renderZones(){
-  const wrap = el('zoneWrap'); wrap.innerHTML='';
-  CFG.ZONES.forEach(z=>{
-    const on = PRESCRIBED.includes(z.id);
+  const wrap = el('zoneWrap'); wrap.innerHTML = '';
+  ZONES.forEach(z=>{
+    const on = G.prescribed.includes(z.id);
     const b = document.createElement('button');
-    b.type='button';
-    b.className = 'zonechip rounded-xl px-3 py-2.5 text-left text-sm transition ' + (on?'on':'');
-    b.innerHTML = `<div class="font-semibold">${z.th}</div>
+    b.type = 'button';
+    b.className = 'chip rounded-xl px-3 py-2.5 text-left text-sm transition ' + (on?'on':'');
+    b.innerHTML = `<div class="font-semibold">${z.th} <span class="text-xs text-white/50">· ${TIER_TH[z.tier]}</span></div>
                    <div class="text-xs text-white/60 mt-0.5">${z.note}</div>`;
     b.onclick = ()=>{
-      const i = PRESCRIBED.indexOf(z.id);
-      if (i>=0) PRESCRIBED.splice(i,1);
-      else if (PRESCRIBED.length < 5) PRESCRIBED.push(z.id);
+      const i = G.prescribed.indexOf(z.id);
+      if (i>=0) G.prescribed.splice(i,1);
+      else if (G.prescribed.length < 5) G.prescribed.push(z.id);
       renderZones();
     };
     wrap.appendChild(b);
   });
+  updateStagePreview();
+}
+/* Stages come from the tiers present, so a prescription of three zones in one
+   tier yields one stage. Showing the count here makes that visible at
+   prescription time instead of mid-session. */
+function updateStagePreview(){
+  const tiers = TIER_ORDER.filter(t => G.prescribed.some(id => (ZONES.find(z=>z.id===id)||{}).tier === t));
+  const per = parseInt(el('fWaves').value,10) || 2;
+  el('stagePreview').textContent = tiers.length
+    ? `จะได้ ${tiers.length} ด่าน (${tiers.map(t=>TIER_TH[t]).join(' → ')}) × ${per} รอบ = ${tiers.length*per} รอบ`
+    : '';
+}
+function updateModeNote(){
+  el('modeNote').textContent = el('fMode').value === 'progressive'
+    ? 'กล่องจะเล็กลงทุกด่าน — เล่นสนุกกว่า แต่ค่าความชัน Fitts จากรอบนี้ปนกับความล้า ไม่ควรนำไปรายงาน'
+    : 'ขนาดกล่องสุ่มภายในแต่ละด่าน — ค่าความชัน Fitts ใช้ได้';
 }
 
 async function bootCamera(){
@@ -1762,8 +2053,8 @@ async function bootCamera(){
 
 el('btnStart').onclick = ()=>{
   G.screen='form'; showScreen('form');
-  refreshNameList(); renderZones();
-  bootCamera();                       // boots while they fill the form
+  refreshNameList(); renderZones(); updateModeNote();
+  bootCamera();                                  // boots while the form is filled
 };
 el('btnBackStart').onclick = ()=>{ G.screen='start'; showScreen('start'); };
 
@@ -1773,15 +2064,17 @@ function refreshNameList(){
 }
 el('fName').addEventListener('input', ()=>{
   const k = playerKey(el('fName').value);
-  const seen = knownNames().some(n=>playerKey(n)===k);
-  el('fSeen').classList.toggle('hidden', !(seen && k));
-  if (seen && k) el('fSeen').textContent = 'เคยเล่นแล้ว — ผลจะต่อจากครั้งก่อน';
+  const seen = k && knownNames().some(n=>playerKey(n)===k);
+  el('fSeen').classList.toggle('hidden', !seen);
+  if (seen) el('fSeen').textContent = 'เคยเล่นแล้ว — ผลจะต่อจากครั้งก่อน';
 });
+el('fWaves').addEventListener('change', updateStagePreview);
+el('fMode').addEventListener('change', updateModeNote);
 
 el('btnForm').onclick = ()=>{
   const name = el('fName').value.trim();
   el('fErr').classList.toggle('hidden', !!name);
-  const zonesOk = PRESCRIBED.length >= 3 && PRESCRIBED.length <= 5;
+  const zonesOk = G.prescribed.length>=3 && G.prescribed.length<=5;
   el('zErr').classList.toggle('hidden', zonesOk);
   if (!name || !zonesOk) return;
 
@@ -1792,18 +2085,17 @@ el('btnForm').onclick = ()=>{
 
   G.side = PLAYER.side;
   G.gripMode = el('fGrip').value;
-  G.wavesTotal = parseInt(el('fWaves').value,10) || CFG.WAVES_DEFAULT;
-
-  /* basket width levels cycle across waves, shuffled in blocks of 3 — each
-     level appears equally early and late, so the Fitts slope is not
-     contaminated by fatigue drifting monotonically through the session */
-  G.wSeq = [];
-  while (G.wSeq.length < G.wavesTotal) G.wSeq = G.wSeq.concat(shuffle(CFG.BASKET_W_LEVELS));
-  G.wSeq = G.wSeq.slice(0, G.wavesTotal);
+  G.wavesPerStage = parseInt(el('fWaves').value,10) || CF('game.wavesPerStage',2);
+  G.stageMode = el('fMode').value;
 
   STATS.start();
-  buildBaskets();
-  showScreen('pinch'); G.screen='pinch'; PC.start(performance.now());
+  buildBoxes(); buildStagePlan();
+
+  if (G.aiState==='unavailable' || !CF('pinchCheck.enabled',true)){
+    startCalib();                       // nothing to measure without a camera
+  } else {
+    G.screen='pinch'; showScreen('pinch'); PC.start(performance.now());
+  }
 };
 
 el('btnSkipStep').onclick = ()=>{
@@ -1811,12 +2103,17 @@ el('btnSkipStep').onclick = ()=>{
   else if (G.screen==='calib') CAL.finish(true);
 };
 function startCalib(){
+  if (G.aiState==='unavailable'){       // mouse-only: no sweep is possible
+    BODY.R=null; BODY.rSource='no-camera';
+    buildBoxes(); buildStagePlan();
+    G.screen='tutorial'; showScreen('tutorial'); return;
+  }
   G.screen='calib'; showScreen('calib'); CAL.start(performance.now());
 }
 function startRun(){
   G.screen='play'; showScreen('play');
   G.wave=0; G.collectedTotal=0; G.omit={left:0,right:0};
-  beginWave();
+  buildStagePlan(); beginWave();
 }
 function finishSession(reason){
   if (G.screen!=='play') return;
@@ -1828,45 +2125,98 @@ function finishSession(reason){
   }
   STATS.endSession(reason);
   G.screen='end'; showScreen('end');
+
+  el('finalScore').textContent = CF('game.showScore',true) ? SCORE.total : '';
   el('finalBalls').textContent = G.collectedTotal;
   el('finalWaves').textContent = G.wave;
-  const L=G.omit.left, R=G.omit.right, tot=L+R;
-  el('finalNeglect').innerHTML = tot
+  const pct = SCORE.pct();
+  el('finalPct').textContent = pct==null ? ''
+    : `ได้ ${pct}% ของคะแนนเต็ม · ถูกครั้งแรก ${SCORE.placed ? Math.round(SCORE.firstTry/SCORE.placed*100) : 0}%`;
+
+  const L=G.omit.left, R=G.omit.right;
+  el('finalNeglect').innerHTML = (L+R)
     ? `ลูกที่ไม่ได้เก็บ — ซ้าย ${L} · ขวา ${R}` +
-      (Math.abs(L-R) >= 3 ? `<br><span class="text-amber-300">พบความไม่สมมาตร — ตรวจสอบเพิ่มเติม (อาจเกิดจากข้อจำกัดการเอื้อมได้)</span>` : '')
+      (Math.abs(L-R) >= 3
+        ? `<br><span class="text-amber-300">พบความไม่สมมาตร — ควรตรวจสอบเพิ่มเติม<br>
+           <span class="text-xs text-white/60">อาจเกิดจากข้อจำกัดการเอื้อมของแขนข้างที่ฝึก ไม่ใช่ภาวะละเลยเสมอไป</span></span>`
+        : '')
     : '';
+  updateSyncChip();
 }
+
 el('btnSkipWave').onclick = ()=>{ if (G.screen==='play') endWave('skipped'); };
-
-/* Debug handle. Read-only in practice, but it is what makes a headless test
-   (and a console poke on a clinic laptop) possible without a build step. */
-window.BASKET_DEBUG = { G, BODY, CFG, STATS, MV, PC, CAL, P, HAND,
-                        zonePoint, reachRect, videoRect, mapPoint, get prescribed(){ return PRESCRIBED; } };
-
 el('btnNextPlayer').onclick = ()=>{
   el('fName').value=''; el('fNote').value='';
-  STATS.start();
   G.screen='form'; showScreen('form'); refreshNameList(); renderZones();
 };
 el('btnAgain').onclick = ()=>{
-  STATS.start(); buildBaskets();
+  STATS.start(); buildBoxes(); buildStagePlan();
   G.screen='pinch'; showScreen('pinch'); PC.start(performance.now());
 };
-el('btnCsv').onclick = ()=> STATS.download();
+el('btnCsv').onclick   = ()=> STATS.download();
 el('camRetry').onclick = ()=>{ releaseCamera(); bootCamera(); };
-el('camMouse').onclick = ()=>{ hideCamProblem(); };
-el('btnFit').onclick = ()=> setFit(FITS[(FITS.indexOf(G.fit)+1)%FITS.length]);
+el('camMouse').onclick = ()=> hideCamProblem();
+el('syncChip').onclick = ()=>{ STATS.flush(true);
+  if (STATS.sync.lastErr) alert('ส่งข้อมูลไม่สำเร็จ: ' + STATS.sync.lastErr); };
+
+el('btnFit').onclick = ()=>{
+  setFit(FITS[(FITS.indexOf(G.fit)+1)%FITS.length]);
+  el('btnFit').textContent = 'มุมมอง: ' + FIT_LABEL[G.fit];
+};
+el('btnTheme').onclick = ()=> setTheme(THEME_ORDER[(THEME_ORDER.indexOf(G.theme)+1)%THEME_ORDER.length]);
 
 window.addEventListener('keydown', e=>{
-  if (e.key==='f') el('btnFit').click();
+  if (e.key==='v' || e.key==='V') el('btnTheme').click();
+  if (e.key==='f' || e.key==='F') el('btnFit').click();
   if (e.key==='Escape' && G.screen==='play') finishSession('early');
 });
 
+/* survey (optional) */
+(function initSurvey(){
+  const b = el('btnSurvey');
+  b.classList.toggle('hidden', !CF('survey.url',''));
+  b.addEventListener('click', ()=>{
+    const base = CF('survey.url',''); if (!base) return;
+    const p = [];
+    const nf = CF('survey.nameField',''), sf = CF('survey.sidField','');
+    if (nf && PLAYER.name)    p.push(nf+'='+encodeURIComponent(PLAYER.name));
+    if (sf && STATS.lastSid)  p.push(sf+'='+encodeURIComponent(STATS.lastSid));
+    const u = p.length ? base + (base.includes('?')?'&':'?') + 'usp=pp_url&' + p.join('&') : base;
+    window.open(u,'_blank','noopener');
+    b.textContent = '✓ เปิดแบบประเมินแล้ว';
+    setTimeout(()=>{ b.textContent='📝 แบบประเมินความพึงพอใจ'; }, 3000);
+  });
+})();
+
+/* Debug handle — read-only in practice, but it is what makes a headless test
+   (and a console poke on a clinic laptop) possible without a build step. */
+window.BALLBOX_DEBUG = { G, BODY, SCORE, STATS, MV, PC, CAL, P, HAND, ZONES, COLORS,
+                         zonePoint, reachRect, videoRect, mapPoint, stageOf, CF };
+
 /* --- boot --- */
-setFit(store.get('basket.fit') || 'fill');
+G.prescribed  = (CF('game.zones', ['ipsi_mid','cross_midline','elevate']) || []).slice(0,5);
+G.stageMode   = CF('game.stageMode','zone');
+G.wavesPerStage = CF('game.wavesPerStage',2);
+(function initForm(){
+  const sel = el('fWaves');
+  (CF('game.waveOptions',[1,2,3,4])).forEach(v=>{
+    const o = document.createElement('option');
+    o.value = v; o.textContent = `${v} รอบ`;
+    if (v === G.wavesPerStage) o.selected = true;
+    sel.appendChild(o);
+  });
+  el('fSide').value = CF('game.defaultSide','right');
+  el('fPose').value = CF('game.defaultPosture','sit');
+  el('fGrip').value = CF('game.gripMode','mixed');
+  el('fMode').value = G.stageMode;
+})();
+setTheme(store.get('ballbox.theme') || CF('game.theme','camera'));
+setFit(store.get('ballbox.fit')   || CF('game.fit','fill'));
+el('btnFit').textContent = 'มุมมอง: ' + FIT_LABEL[G.fit];
 renderZones();
 resize();
 showScreen('start');
+updateSyncChip();
 </script>
 </body>
 </html>
